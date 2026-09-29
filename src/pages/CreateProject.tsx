@@ -1,22 +1,41 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Rules from '../components/Rules'
 import { Avatar, Badge, Button, Card, Input, Label, Money, TextArea, cx } from '../components/ui'
 import { uid } from '../lib/format'
+import { DEFAULT_DEPOSIT, DEFAULT_REVISIONS, schedule } from '../lib/rules'
 import { personName, useStore } from '../store'
 import type { Project } from '../types'
 
-type DraftMilestone = { id: string; title: string; due: string }
-type DraftRole = { id: string; title: string; assignee: string; pay: string; milestones: DraftMilestone[] }
+type DraftMilestone = { id: string; title: string; doneWhen: string; due: string; pct: number; revisions: number }
+type DraftRole = { id: string; title: string; assignee: string; pay: string; depositPct: number; milestones: DraftMilestone[] }
 
 const SEGMENT_COLORS = ['#ff6a3d', '#1d1b16', '#3d7bff', '#1f8a5b', '#a855f7', '#e0a100']
+
+const newMilestone = (pct: number): DraftMilestone => ({
+  id: uid(),
+  title: '',
+  doneWhen: '',
+  due: '',
+  pct,
+  revisions: DEFAULT_REVISIONS,
+})
 
 const newRole = (): DraftRole => ({
   id: uid(),
   title: '',
   assignee: '',
   pay: '',
-  milestones: [{ id: uid(), title: '', due: '' }],
+  depositPct: DEFAULT_DEPOSIT,
+  milestones: [newMilestone(100 - DEFAULT_DEPOSIT)],
 })
+
+// Split what's left after the deposit evenly; the last milestone absorbs rounding.
+function evenSplit(milestones: DraftMilestone[], depositPct: number): DraftMilestone[] {
+  const left = 100 - depositPct
+  const each = Math.floor(left / milestones.length)
+  return milestones.map((m, i) => ({ ...m, pct: i === milestones.length - 1 ? left - each * (milestones.length - 1) : each }))
+}
 
 const toHandle = (s: string) => {
   const clean = s.trim().replace(/^@+/, '').toLowerCase()
@@ -24,6 +43,7 @@ const toHandle = (s: string) => {
 }
 
 const payOf = (r: DraftRole) => Math.max(0, Number(r.pay) || 0)
+const pctSum = (r: DraftRole) => r.depositPct + r.milestones.reduce((s, m) => s + m.pct, 0)
 
 export default function CreateProject() {
   const { me, dispatch } = useStore()
@@ -34,6 +54,7 @@ export default function CreateProject() {
   const [roles, setRoles] = useState<DraftRole[]>([newRole()])
 
   const total = roles.reduce((s, r) => s + payOf(r), 0)
+  const deposits = roles.reduce((s, r) => s + Math.round((payOf(r) * r.depositPct) / 100), 0)
 
   const updateRole = (id: string, patch: Partial<DraftRole>) =>
     setRoles((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))
@@ -45,15 +66,14 @@ export default function CreateProject() {
       ),
     )
 
+  const allMilestones = roles.flatMap((r) => r.milestones)
   const checks = [
     { ok: name.trim().length > 0, label: 'Project has a name' },
     { ok: brief.trim().length >= 30, label: 'Brief says what you’re building (30+ characters)' },
-    { ok: roles.length > 0 && roles.every((r) => r.title.trim()), label: 'Every role has a title' },
-    { ok: roles.every((r) => payOf(r) > 0), label: 'Every role has pay' },
-    {
-      ok: roles.every((r) => r.milestones.some((m) => m.title.trim())),
-      label: 'Every role has at least one milestone',
-    },
+    { ok: roles.length > 0 && roles.every((r) => r.title.trim() && payOf(r) > 0), label: 'Every role has a title and pay' },
+    { ok: allMilestones.every((m) => m.title.trim()), label: 'Every milestone has a title' },
+    { ok: allMilestones.every((m) => m.doneWhen.trim().length >= 10), label: 'Every milestone says when it’s done' },
+    { ok: roles.every((r) => pctSum(r) === 100), label: 'Each payment plan adds up to 100%' },
   ]
   const ready = checks.every((c) => c.ok)
 
@@ -68,15 +88,24 @@ export default function CreateProject() {
       version: 1,
       status: 'signing',
       createdAt: new Date().toISOString(),
+      payouts: [],
       roles: roles.map((r) => ({
         id: r.id,
         title: r.title.trim(),
         assignee: toHandle(r.assignee),
         pay: payOf(r),
+        depositPct: r.depositPct,
         response: 'pending',
-        milestones: r.milestones
-          .filter((m) => m.title.trim())
-          .map((m) => ({ id: m.id, title: m.title.trim(), due: m.due || undefined })),
+        milestones: r.milestones.map((m) => ({
+          id: m.id,
+          title: m.title.trim(),
+          doneWhen: m.doneWhen.trim(),
+          due: m.due || undefined,
+          pct: m.pct,
+          revisions: m.revisions,
+          status: 'working',
+          submissions: [],
+        })),
       })),
       messages: [
         {
@@ -98,7 +127,7 @@ export default function CreateProject() {
         <p className="mb-2 text-sm font-medium text-accent">New project</p>
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Build your crew.</h1>
         <p className="mt-3 text-lg text-muted">
-          Write the brief, set the pay for each role, and send invites. Nothing is final until everyone signs.
+          Write the brief, set each role’s pay and payment plan, and send invites. Nothing is final until everyone signs.
         </p>
       </div>
 
@@ -128,104 +157,35 @@ export default function CreateProject() {
             </div>
           </Card>
 
-          {/* Step 2 — the crew */}
+          {/* Step 2 — the crew and how each person gets paid */}
           <Card className="p-6 sm:p-8">
             <StepTitle
               n={2}
               title="The crew"
-              sub="One card per role. Pay is a fixed amount, so a raise for one person never cuts anyone else’s."
+              sub="One card per role. Pay is fixed, a deposit goes out first, and the rest is paid milestone by milestone."
             />
-            <div className="space-y-4">
+            <div className="space-y-5">
               {roles.map((r, i) => (
-                <div key={r.id} className="animate-rise rounded-2xl border border-line bg-paper/60 p-4 sm:p-5">
-                  <div className="mb-4 flex items-center gap-3">
-                    <span className="h-3 w-3 rounded-full" style={{ background: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }} />
-                    <span className="text-sm font-medium text-muted">Role {i + 1}</span>
-                    {roles.length > 1 && (
-                      <button
-                        onClick={() => setRoles((rs) => rs.filter((x) => x.id !== r.id))}
-                        className="ml-auto text-sm text-muted hover:text-ink"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-[1.3fr_1fr_140px]">
-                    <label className="block">
-                      <Label>Role</Label>
-                      <Input value={r.title} onChange={(e) => updateRole(r.id, { title: e.target.value })} placeholder="Mix engineer" />
-                    </label>
-                    <label className="block">
-                      <Label hint="Blank = open role">Who</Label>
-                      <Input
-                        value={r.assignee}
-                        onChange={(e) => updateRole(r.id, { assignee: e.target.value })}
-                        placeholder="@handle"
-                      />
-                    </label>
-                    <label className="block">
-                      <Label>Pay (USDC)</Label>
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
-                        <Input
-                          inputMode="decimal"
-                          value={r.pay}
-                          onChange={(e) => updateRole(r.id, { pay: e.target.value.replace(/[^\d.]/g, '') })}
-                          placeholder="300"
-                          className="pl-8 tabular-nums"
-                        />
-                      </div>
-                    </label>
-                  </div>
-
-                  <div className="mt-4">
-                    <Label hint="Pay is released as the Lead approves each one">Milestones</Label>
-                    <div className="space-y-2">
-                      {r.milestones.map((m, mi) => (
-                        <div key={m.id} className="flex gap-2">
-                          <Input
-                            value={m.title}
-                            onChange={(e) => updateMilestone(r.id, m.id, { title: e.target.value })}
-                            placeholder={mi === 0 ? 'First draft delivered' : 'Final files delivered'}
-                          />
-                          <Input
-                            type="date"
-                            value={m.due}
-                            onChange={(e) => updateMilestone(r.id, m.id, { due: e.target.value })}
-                            className="w-36 shrink-0 sm:w-40"
-                            aria-label="Due date"
-                          />
-                          {r.milestones.length > 1 && (
-                            <button
-                              onClick={() =>
-                                updateRole(r.id, { milestones: r.milestones.filter((x) => x.id !== m.id) })
-                              }
-                              className="px-2 text-muted hover:text-ink"
-                              aria-label="Remove milestone"
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <button
-                      onClick={() => updateRole(r.id, { milestones: [...r.milestones, { id: uid(), title: '', due: '' }] })}
-                      className="mt-2 text-sm font-medium text-muted hover:text-ink"
-                    >
-                      + Add milestone
-                    </button>
-                  </div>
-                </div>
+                <RoleEditor
+                  key={r.id}
+                  r={r}
+                  index={i}
+                  canRemove={roles.length > 1}
+                  onRemove={() => setRoles((rs) => rs.filter((x) => x.id !== r.id))}
+                  update={(patch) => updateRole(r.id, patch)}
+                  updateMilestone={(mId, patch) => updateMilestone(r.id, mId, patch)}
+                />
               ))}
             </div>
             <Button variant="outline" className="mt-4 w-full" onClick={() => setRoles((rs) => [...rs, newRole()])}>
               + Add a role
             </Button>
           </Card>
+
+          <Rules title="The rules your crew signs up to" />
         </div>
 
-        {/* Live preview */}
+        {/* Live summary */}
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <Card className="overflow-hidden">
             <div className="border-b border-line p-6">
@@ -236,7 +196,7 @@ export default function CreateProject() {
                   payOf(r) > 0 ? (
                     <div
                       key={r.id}
-                      className="h-full transition-all duration-500 first:rounded-l-full last:rounded-r-full"
+                      className="h-full transition-all duration-500"
                       style={{ width: `${(payOf(r) / (total || 1)) * 100}%`, background: SEGMENT_COLORS[i % SEGMENT_COLORS.length] }}
                     />
                   ) : null,
@@ -252,9 +212,9 @@ export default function CreateProject() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 text-xs leading-relaxed text-muted">
-                Once everyone signs, you fund the vault with this amount. Your crew sees the money is there before they start.
-              </p>
+              <div className="mt-4 rounded-2xl bg-accent-soft/60 p-3 text-sm">
+                <b>${deposits.toLocaleString('en-US')}</b> goes out as deposits the moment you fund the vault.
+              </div>
             </div>
             <div className="p-6">
               <ul className="mb-5 space-y-2">
@@ -276,7 +236,7 @@ export default function CreateProject() {
                 Send invites
               </Button>
               <p className="mt-3 text-center text-xs text-muted">
-                You can still change the draft. Any change asks everyone to sign again.
+                Collaborators can counter-offer on pay and deposit. Any change asks everyone to sign again.
               </p>
             </div>
           </Card>
@@ -284,6 +244,181 @@ export default function CreateProject() {
             <Badge>No fees while we’re in beta</Badge>
           </div>
         </aside>
+      </div>
+    </div>
+  )
+}
+
+function RoleEditor({
+  r,
+  index,
+  canRemove,
+  onRemove,
+  update,
+  updateMilestone,
+}: {
+  r: DraftRole
+  index: number
+  canRemove: boolean
+  onRemove: () => void
+  update: (patch: Partial<DraftRole>) => void
+  updateMilestone: (mId: string, patch: Partial<DraftMilestone>) => void
+}) {
+  const sum = pctSum(r)
+  const lines = schedule({ pay: payOf(r), depositPct: r.depositPct, milestones: r.milestones.map((m) => ({ ...m, status: 'working', submissions: [] })) })
+  const amountOf = (key: string) => lines.find((l) => l.key === key)?.amount ?? 0
+
+  return (
+    <div className="animate-rise rounded-2xl border border-line bg-paper/60 p-4 sm:p-5">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="h-3 w-3 rounded-full" style={{ background: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }} />
+        <span className="text-sm font-medium text-muted">Role {index + 1}</span>
+        {canRemove && (
+          <button onClick={onRemove} className="ml-auto text-sm text-muted hover:text-ink">
+            Remove
+          </button>
+        )}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-[1.3fr_1fr_140px]">
+        <label className="block">
+          <Label>Role</Label>
+          <Input value={r.title} onChange={(e) => update({ title: e.target.value })} placeholder="Mix engineer" />
+        </label>
+        <label className="block">
+          <Label hint="Blank = open role">Who</Label>
+          <Input value={r.assignee} onChange={(e) => update({ assignee: e.target.value })} placeholder="@handle" />
+        </label>
+        <label className="block">
+          <Label>Pay (USDC)</Label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
+            <Input
+              inputMode="decimal"
+              value={r.pay}
+              onChange={(e) => update({ pay: e.target.value.replace(/[^\d.]/g, '') })}
+              placeholder="300"
+              className="pl-8 tabular-nums"
+            />
+          </div>
+        </label>
+      </div>
+
+      {/* Deposit */}
+      <div className="mt-5 rounded-2xl border border-accent/30 bg-card p-4">
+        <div className="flex items-baseline justify-between">
+          <p className="text-sm font-medium">
+            <span className="mr-1 text-accent">↑</span> Upfront deposit · {r.depositPct}%
+          </p>
+          <p className="text-sm tabular-nums text-muted">${amountOf('deposit').toLocaleString('en-US')}</p>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={5}
+          value={r.depositPct}
+          onChange={(e) => {
+            const depositPct = Number(e.target.value)
+            update({ depositPct, milestones: evenSplit(r.milestones, depositPct) })
+          }}
+          className="mt-2 w-full accent-[#ff6a3d]"
+          aria-label="Deposit percentage"
+        />
+        <p className="text-xs text-muted">Paid first, the moment you fund the vault. It shows you’re serious before any work starts.</p>
+      </div>
+
+      {/* Milestones */}
+      <div className="mt-5">
+        <div className="mb-2 flex items-baseline justify-between">
+          <p className="text-sm font-medium">Milestones</p>
+          <p className={cx('text-xs font-medium', sum === 100 ? 'text-ok' : 'text-warn')}>
+            Plan adds up to {sum}%{sum === 100 ? ' ✓' : ' · needs 100%'}
+          </p>
+        </div>
+        <div className="space-y-3">
+          {r.milestones.map((m, mi) => (
+            <div key={m.id} className="rounded-2xl border border-line bg-card p-4">
+              <div className="flex items-center gap-2">
+                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink/5 text-xs font-semibold">{mi + 1}</span>
+                <Input
+                  value={m.title}
+                  onChange={(e) => updateMilestone(m.id, { title: e.target.value })}
+                  placeholder={mi === 0 ? 'First draft delivered' : 'Final files delivered'}
+                  className="h-10"
+                />
+                {r.milestones.length > 1 && (
+                  <button
+                    onClick={() => {
+                      const rest = r.milestones.filter((x) => x.id !== m.id)
+                      update({ milestones: evenSplit(rest, r.depositPct) })
+                    }}
+                    className="px-2 text-muted hover:text-ink"
+                    aria-label="Remove milestone"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              <label className="mt-3 block">
+                <Label hint="Reviews are judged against this">Done when…</Label>
+                <TextArea
+                  rows={2}
+                  value={m.doneWhen}
+                  onChange={(e) => updateMilestone(m.id, { doneWhen: e.target.value })}
+                  placeholder="4 mastered WAVs at -14 LUFS, labelled, with one round of notes included."
+                  className="text-sm"
+                />
+              </label>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <label className="block">
+                  <Label>Share</Label>
+                  <div className="relative">
+                    <Input
+                      inputMode="numeric"
+                      value={String(m.pct)}
+                      onChange={(e) => updateMilestone(m.id, { pct: Math.min(100, Number(e.target.value.replace(/\D/g, '')) || 0) })}
+                      className="h-10 pr-7 tabular-nums"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted">%</span>
+                  </div>
+                  <span className="mt-1 block text-xs tabular-nums text-muted">${amountOf(m.id).toLocaleString('en-US')}</span>
+                </label>
+                <label className="block">
+                  <Label>Due</Label>
+                  <Input type="date" value={m.due} onChange={(e) => updateMilestone(m.id, { due: e.target.value })} className="h-10 px-3 text-sm" />
+                </label>
+                <label className="block">
+                  <Label>Revisions</Label>
+                  <select
+                    value={m.revisions}
+                    onChange={(e) => updateMilestone(m.id, { revisions: Number(e.target.value) })}
+                    className="h-10 w-full rounded-2xl border border-line bg-card px-3 text-sm"
+                  >
+                    {[0, 1, 2, 3, 4].map((n) => (
+                      <option key={n} value={n}>
+                        {n} round{n === 1 ? '' : 's'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex gap-4">
+          <button
+            onClick={() => update({ milestones: evenSplit([...r.milestones, newMilestone(0)], r.depositPct) })}
+            className="text-sm font-medium text-muted hover:text-ink"
+          >
+            + Add milestone
+          </button>
+          {sum !== 100 && (
+            <button onClick={() => update({ milestones: evenSplit(r.milestones, r.depositPct) })} className="text-sm font-medium text-accent">
+              Split the rest evenly
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

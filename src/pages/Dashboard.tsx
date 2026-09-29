@@ -4,7 +4,7 @@ import { Avatar, Badge, Card, Money, cx } from '../components/ui'
 import { shortDate } from '../lib/format'
 import { projectStatus, roleStatus } from '../lib/status'
 import { budget, isSigned, personName, signedCount, useStore } from '../store'
-import type { Project } from '../types'
+import { REVIEWER, type Project } from '../types'
 
 type View = 'lead' | 'crew'
 
@@ -17,7 +17,11 @@ export default function Dashboard() {
   const myRoles = joined.flatMap((p) => p.roles.filter((r) => r.assignee === me).map((r) => ({ p, r })))
   const toSign = myRoles.filter(({ p, r }) => p.status === 'signing' && !isSigned(p, r))
   const openCounters = leading.flatMap((p) => p.messages.filter((m) => m.kind === 'counter' && !m.resolution))
-  const committed = myRoles.filter(({ p, r }) => isSigned(p, r) || p.status === 'funded').reduce((s, { r }) => s + r.pay, 0)
+  const earned = projects.flatMap((p) => p.payouts).filter((x) => x.to === me && x.kind !== 'refund').reduce((s, x) => s + x.amount, 0)
+  const toReview = leading.flatMap((p) => p.roles.flatMap((r) => r.milestones.filter((m) => m.status === 'submitted')))
+  const disputes = projects.flatMap((p) =>
+    p.roles.flatMap((r) => r.milestones.filter((m) => m.status === 'disputed').map((m) => ({ p, r, m }))),
+  )
 
   const list = view === 'lead' ? leading : joined
 
@@ -29,18 +33,34 @@ export default function Dashboard() {
       </div>
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
-        <Stat label="Signed work, yours to earn" value={<Money value={committed} className="text-3xl font-bold" />} />
+        <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />
         <Stat
           label="Invites waiting on you"
           value={<span className="font-display text-3xl font-bold">{toSign.length}</span>}
           accent={toSign.length > 0}
         />
         <Stat
-          label="Counter-offers to answer"
-          value={<span className="font-display text-3xl font-bold">{openCounters.length}</span>}
-          accent={openCounters.length > 0}
+          label="Counter-offers + work to review"
+          value={<span className="font-display text-3xl font-bold">{openCounters.length + toReview.length}</span>}
+          accent={openCounters.length + toReview.length > 0}
         />
       </div>
+
+      {me === REVIEWER && (
+        <Card className="mb-8 p-2">
+          <p className="px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wider text-warn">Disputes to rule on · {disputes.length}</p>
+          {disputes.length === 0 && <p className="px-4 py-3 text-sm text-muted">Nothing open.</p>}
+          {disputes.map(({ p, r, m }) => (
+            <Link key={m.id} to={`/p/${p.id}/m/${r.id}/${m.id}`} className="flex items-center gap-3 rounded-2xl px-4 py-3 hover:bg-ink/[.03]">
+              <span className="h-2 w-2 rounded-full bg-warn" />
+              <span className="text-sm">
+                <b>{m.title}</b> · {p.name} · {personName(r.assignee!)} vs {personName(p.lead)}
+              </span>
+              <span className="ml-auto text-sm text-muted">Open →</span>
+            </Link>
+          ))}
+        </Card>
+      )}
 
       <div className="mb-5 flex items-center gap-3">
         <div className="inline-flex rounded-full border border-line bg-card p-1">

@@ -9,7 +9,7 @@ export function Logo() {
         <span className="absolute left-0 top-0 h-6 w-6 rounded-full bg-accent" />
         <span className="absolute right-0 top-0 h-6 w-6 rounded-full bg-ink mix-blend-multiply" />
       </span>
-      <span className="font-display text-xl font-bold tracking-tight">crewpay</span>
+      <span className="font-display text-xl font-bold tracking-tight">CrewPay</span>
     </Link>
   )
 }
@@ -18,7 +18,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   cx('rounded-full px-3 py-1.5 text-sm font-medium transition', isActive ? 'bg-ink text-paper' : 'text-muted hover:text-ink')
 
 export default function Layout() {
-  const { me, dispatch } = useStore()
+  const { me, dispatch, clockOffset } = useStore()
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/85 backdrop-blur">
@@ -55,9 +55,18 @@ export default function Layout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6">
         <Outlet />
       </main>
+      {/* Prototype only: move the clock forward to watch time-based rules fire. */}
+      <div className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card/95 py-1.5 pl-4 pr-1.5 text-xs shadow-[0_8px_30px_-12px_rgba(29,27,22,.35)] backdrop-blur">
+        <span className="text-muted">
+          Demo clock{clockOffset > 0 ? ` · +${Math.round(clockOffset / 86_400_000)} days` : ''}
+        </span>
+        <button onClick={() => dispatch({ type: 'advance', days: 7 })} className="rounded-full bg-ink px-3 py-1.5 font-medium text-paper">
+          Skip 7 days
+        </button>
+      </div>
     </div>
   )
 }

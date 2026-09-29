@@ -85,6 +85,12 @@ function ChatItem({ project, m }: { project: Project; m: Message }) {
         <p className="mt-3 font-display text-2xl font-bold">
           {role?.title}: ${m.amount?.toLocaleString('en-US')}
         </p>
+        {m.depositPct !== undefined && m.amount !== undefined && (
+          <p className="mt-1 text-sm text-muted">
+            {m.depositPct}% up front (${Math.round((m.amount * m.depositPct) / 100).toLocaleString('en-US')} deposit)
+            {!m.resolution && role && ` · currently $${role.pay.toLocaleString('en-US')} with ${role.depositPct}% up front`}
+          </p>
+        )}
         <p className="mt-2 text-sm leading-relaxed">{m.text}</p>
         {canResolve && role && (
           <>
@@ -101,7 +107,7 @@ function ChatItem({ project, m }: { project: Project; m: Message }) {
                 variant="outline"
                 onClick={() => dispatch({ type: 'resolveCounter', projectId: project.id, messageId: m.id, accept: false })}
               >
-                Keep ${role.pay}
+                Keep current terms
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted">
