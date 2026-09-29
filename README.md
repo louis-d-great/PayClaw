@@ -20,10 +20,10 @@ You need [Git](https://git-scm.com/downloads), [Node.js](https://nodejs.org) (th
 git clone https://github.com/louis-d-great/PayClaw.git
 cd PayClaw
 npm install
-npm run dev
+npm start
 ```
 
-Open the address it prints (usually http://localhost:5173). To get the latest changes later: `git pull`, then `npm install`.
+Your browser opens CrewPay automatically at http://localhost:5173. Leave the terminal open while you use it; press Ctrl+C to stop. To get the latest changes later: `git pull`, then `npm install`.
 
 Use **Viewing as** in the top bar to switch between Louis, Tobi, Ada, Kemi and **CrewPay review** (the dispute reviewer). **Skip 7 days** at the bottom moves the clock forward so you can watch auto-approval fire. **Reset demo data** on the dashboard restores the sample projects.
 
