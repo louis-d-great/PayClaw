@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import Chat from '../components/Chat'
-import { Avatar, Badge, Button, Card, Money } from '../components/ui'
+import ChatPanel from '../components/Chat'
+import { Avatar, Badge, Button, Card, Input, Money, PersonLink, TextArea } from '../components/ui'
 import { shortDate } from '../lib/format'
 import Schedule from '../components/Schedule'
 import { canReclaim, earnedBy, vault } from '../lib/rules'
 import { milestoneStatus, projectStatus, roleStatus } from '../lib/status'
-import { budget, personName, signedCount, useStore } from '../store'
+import { budget, parties, personName, signedCount, useStore } from '../store'
 import { REVIEWER, type Project, type Role } from '../types'
 
 export default function ProjectPage() {
@@ -48,7 +48,12 @@ export default function ProjectPage() {
           </div>
           <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">{project.name}</h1>
           <p className="mt-3 flex items-center gap-2 text-muted">
-            <Avatar handle={project.lead} size={22} /> Led by {isLead ? 'you' : personName(project.lead)}
+            <Avatar handle={project.lead} size={22} /> Led by {isLead ? 'you' : <PersonLink handle={project.lead} />}
+            {project.fundedAt && (
+              <Link to={`/r/${project.id}`} className="ml-2 text-sm font-medium text-accent underline underline-offset-2">
+                Public receipt
+              </Link>
+            )}
           </p>
         </div>
         <div className="text-right">
@@ -57,8 +62,19 @@ export default function ProjectPage() {
         </div>
       </div>
 
+      {project.status === 'cancelled' && (
+        <div className="mb-6 rounded-2xl border border-line bg-card px-5 py-4 text-sm">
+          <b>This project is cancelled.</b>{' '}
+          <span className="text-muted">
+            {project.fundedAt
+              ? 'Money already paid out stays with the people who earned it. The rest went back to the Lead.'
+              : 'It was called off before funding, so no money moved.'}
+          </span>
+        </div>
+      )}
+
       <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {project.fundedAt ? (
             <>
               <VaultCard project={project} />
@@ -66,10 +82,14 @@ export default function ProjectPage() {
               {project.roles.map((r) => (
                 <WorkCard key={r.id} project={project} role={r} />
               ))}
+              {(project.status === 'funded' || project.cancel) && project.status !== 'cancelled' && <CancelCard project={project} />}
             </>
           ) : (
             <>
-              <SignatureGate project={project} signed={signed} isLead={isLead} onFund={() => dispatch({ type: 'fund', projectId: project.id })} />
+              {project.status !== 'cancelled' && (
+                <SignatureGate project={project} signed={signed} isLead={isLead} onFund={() => dispatch({ type: 'fund', projectId: project.id })} />
+              )}
+              {isLead && (project.status === 'signing' || project.status === 'ready') && <DraftActions project={project} />}
 
               {!isLead && myRole && project.status === 'signing' && (
                 <Link
@@ -97,14 +117,8 @@ export default function ProjectPage() {
           </Card>
         </div>
 
-        <Card className="flex h-[560px] flex-col overflow-hidden lg:sticky lg:top-24">
-          <div className="border-b border-line px-5 py-4">
-            <p className="font-display text-lg font-bold">Project chat</p>
-            <p className="text-xs text-muted">The official record. Counter-offers, changes and payouts are logged here, and it’s the evidence in a dispute.</p>
-          </div>
-          <div className="min-h-0 flex-1">
-            <Chat project={project} />
-          </div>
+        <Card className="flex h-[640px] max-h-[calc(100vh-7rem)] min-h-[480px] flex-col overflow-hidden lg:sticky lg:top-24">
+          <ChatPanel project={project} />
         </Card>
       </div>
     </div>
@@ -185,12 +199,15 @@ function RoleRow({ project, role, isLead }: { project: Project; role: Role; isLe
       <div className="min-w-0 flex-1">
         <p className="font-medium">{role.title}</p>
         <p className="truncate text-sm text-muted">
-          {role.assignee ? personName(role.assignee) : 'Open role'} · {role.milestones.length} milestone
+          {role.assignee ? <PersonLink handle={role.assignee} /> : 'Open role'} · {role.milestones.length} milestone
           {role.milestones.length === 1 ? '' : 's'}
         </p>
       </div>
       <Badge tone={s.tone}>{s.label}</Badge>
       <span className="w-16 text-right font-medium tabular-nums">${role.pay.toLocaleString('en-US')}</span>
+      {isLead && project.status === 'signing' && !role.assignee && role.applicants && role.applicants.length > 0 && (
+        <Applicants project={project} role={role} />
+      )}
       {isLead && project.status === 'signing' && (
         <div className="flex w-full gap-2 sm:w-auto">
           <Button size="sm" variant="outline" onClick={copy}>
@@ -293,7 +310,7 @@ function WorkCard({ project, role }: { project: Project; role: Role }) {
             {role.assignee === me && <span className="ml-2 text-xs font-medium text-accent">You</span>}
           </p>
           <p className="text-sm text-muted">
-            {role.assignee ? personName(role.assignee) : 'Open'}
+            <PersonLink handle={role.assignee} />
             {payout && ` · paid by ${payout}`}
           </p>
         </div>
@@ -318,6 +335,140 @@ function WorkCard({ project, role }: { project: Project; role: Role }) {
           </span>
           <span className="text-muted">Open →</span>
         </Link>
+      )}
+    </Card>
+  )
+}
+
+function DraftActions({ project }: { project: Project }) {
+  const { dispatch } = useStore()
+  const [cancelling, setCancelling] = useState(false)
+  const [reason, setReason] = useState('')
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+          <p className="font-medium">Need to change something?</p>
+          <p className="text-sm text-muted">Edit pay, roles, milestones or people. Any change asks everyone to sign again.</p>
+        </div>
+        <Link
+          to={`/p/${project.id}/edit`}
+          className="inline-flex h-10 items-center rounded-full bg-ink px-5 text-sm font-medium text-paper transition hover:bg-ink/85"
+        >
+          Edit draft
+        </Link>
+        <Button variant="ghost" onClick={() => setCancelling((c) => !c)}>
+          Cancel project
+        </Button>
+      </div>
+      {cancelling && (
+        <div className="animate-rise mt-4 space-y-3 border-t border-line pt-4">
+          <p className="text-sm">Nothing has been funded yet, so you can call this off on your own. Your crew sees your reason in the chat.</p>
+          <Input id="cancel-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why you’re cancelling (optional)" />
+          <Button variant="outline" onClick={() => dispatch({ type: 'cancelDraft', projectId: project.id, reason: reason.trim() })}>
+            Yes, cancel the project
+          </Button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function Applicants({ project, role }: { project: Project; role: Role }) {
+  const { dispatch } = useStore()
+  return (
+    <div className="w-full space-y-2 pt-1">
+      <p className="text-xs font-medium uppercase tracking-wider text-accent">Applicants · pick one to invite</p>
+      {role.applicants!.map((a) => (
+        <div key={a.handle} className="rounded-2xl border border-line bg-paper/60 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Avatar handle={a.handle} size={28} />
+            <PersonLink handle={a.handle} className="font-medium" />
+            <a href={a.portfolio} target="_blank" rel="noreferrer" className="truncate text-sm text-accent underline underline-offset-2">
+              Portfolio ↗
+            </a>
+            <span className="ml-auto text-sm tabular-nums">
+              {a.amount && a.amount !== role.pay ? (
+                <>
+                  asks <b>${a.amount.toLocaleString('en-US')}</b>
+                </>
+              ) : (
+                <>accepts ${role.pay.toLocaleString('en-US')}</>
+              )}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed">{a.note}</p>
+          <Button size="sm" className="mt-3" onClick={() => dispatch({ type: 'pick', projectId: project.id, roleId: role.id, handle: a.handle })}>
+            Pick {personName(a.handle)}
+            {a.amount && a.amount !== role.pay ? ` at $${a.amount}` : ''}
+          </Button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Once money is in the vault, cancelling needs everyone. Paid work stays paid; the rest returns to the Lead.
+function CancelCard({ project }: { project: Project }) {
+  const { me, dispatch } = useStore()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const everyone = parties(project)
+  const isParty = everyone.includes(me)
+  const c = project.cancel
+
+  if (!c)
+    return isParty ? (
+      <Card className="p-5">
+        <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between text-left">
+          <span>
+            <span className="block font-medium">Cancel the project</span>
+            <span className="text-sm text-muted">Needs everyone to agree. Paid work stays paid; the rest returns to the Lead.</span>
+          </span>
+          <span className="text-muted">{open ? '−' : '+'}</span>
+        </button>
+        {open && (
+          <div className="animate-rise mt-4 space-y-3">
+            <TextArea id="cancel-proposal" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why the crew should stop here." />
+            <Button variant="outline" disabled={reason.trim().length < 5} onClick={() => dispatch({ type: 'proposeCancel', projectId: project.id, reason: reason.trim() })}>
+              Ask everyone to cancel
+            </Button>
+          </div>
+        )}
+      </Card>
+    ) : null
+
+  const agreed = c.approvals.includes(me)
+  return (
+    <Card className="border-warn/40 p-5">
+      <p className="text-xs font-medium uppercase tracking-wider text-warn">Cancel requested</p>
+      <p className="mt-1 font-medium">
+        {personName(c.proposedBy)}: “{c.reason}”
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {everyone.map((h) => (
+          <span
+            key={h}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${c.approvals.includes(h) ? 'bg-ok-soft text-ok' : 'bg-ink/5 text-muted'}`}
+          >
+            <Avatar handle={h} size={18} /> {personName(h)} {c.approvals.includes(h) ? '✓' : '…'}
+          </span>
+        ))}
+      </div>
+      <p className="mt-3 text-sm text-muted">
+        If everyone agrees, ${vault(project).held.toLocaleString('en-US')} still in the vault goes back to {personName(project.lead)}.
+      </p>
+      {isParty && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!agreed && (
+            <Button variant="outline" onClick={() => dispatch({ type: 'approveCancel', projectId: project.id })}>
+              I agree to cancel
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => dispatch({ type: 'withdrawCancel', projectId: project.id })}>
+            {me === c.proposedBy ? 'Withdraw request' : 'Keep working'}
+          </Button>
+        </div>
       )}
     </Card>
   )

@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
+import { Link } from 'react-router-dom'
 import { personName } from '../store'
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ')
@@ -105,6 +106,16 @@ export function Money({ value, className }: { value: number; className?: string 
       ${value.toLocaleString('en-US')}
       <span className="ml-1 align-middle text-[0.45em] font-sans font-medium tracking-wide text-muted">USDC</span>
     </span>
+  )
+}
+
+// A person's name that opens their public profile.
+export function PersonLink({ handle, className }: { handle?: string; className?: string }) {
+  if (!handle) return <span className={className}>Open</span>
+  return (
+    <Link to={`/u/${handle.replace(/^@/, '')}`} className={cx('underline-offset-2 hover:underline', className)}>
+      {personName(handle)}
+    </Link>
   )
 }
 

@@ -69,7 +69,8 @@ export const collaboratorCanDispute = (m: Milestone) =>
 // The Lead can escalate instead of approving once no revision rounds are left.
 export const leadCanDispute = (m: Milestone) => m.status === 'submitted' && revisionsLeft(m) === 0
 
-export const isSettled = (m: Milestone) => m.status === 'paid' || m.status === 'resolved' || m.status === 'reclaimed'
+export const isSettled = (m: Milestone) =>
+  m.status === 'paid' || m.status === 'resolved' || m.status === 'reclaimed' || m.status === 'cancelled'
 
 export function vault(p: Project) {
   const funded = p.fundedAt ? p.roles.reduce((s, r) => s + r.pay, 0) : 0

@@ -31,6 +31,9 @@ export default function Layout() {
             <NavLink to="/new" className={navClass}>
               New project
             </NavLink>
+            <NavLink to={`/u/${me.replace(/^@/, '')}`} className={navClass}>
+              Profile
+            </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <Link to="/new" className="grid h-9 w-9 place-items-center rounded-full bg-ink text-lg text-paper sm:hidden" aria-label="New project">

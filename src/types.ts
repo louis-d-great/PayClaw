@@ -44,6 +44,7 @@ export type MilestoneStatus =
   | 'disputed'
   | 'resolved' // dispute ruled, money split
   | 'reclaimed' // deadline missed with nothing submitted, money back to the Lead
+  | 'cancelled' // the whole crew agreed to cancel the project
 
 export type Milestone = {
   id: string
@@ -66,6 +67,14 @@ export type PayoutPreference = {
   note?: string
 }
 
+export type Applicant = {
+  handle: Handle
+  portfolio: string // link to past work
+  note: string
+  amount?: number // asking price, if different from the offer
+  at: string
+}
+
 export type RoleResponse = 'pending' | 'accepted' | 'countered' | 'declined'
 
 export type Role = {
@@ -80,11 +89,21 @@ export type Role = {
   // while it matches the project's current version.
   signedVersion?: number
   payout?: PayoutPreference
+  applicants?: Applicant[] // open roles only
 }
 
-export type ProjectStatus = 'signing' | 'ready' | 'funded' | 'done'
+export type ProjectStatus = 'signing' | 'ready' | 'funded' | 'done' | 'cancelled'
 
 export type MessageKind = 'text' | 'counter' | 'system'
+
+export type Attachment = {
+  name: string
+  size: number
+  mime: string
+  kind: 'image' | 'audio' | 'video' | 'file'
+  // Small files are kept inline as a data URL in the prototype. Supabase Storage replaces this.
+  url?: string
+}
 
 export type Message = {
   id: string
@@ -96,6 +115,8 @@ export type Message = {
   amount?: number // counter-offer: proposed pay
   depositPct?: number // counter-offer: proposed deposit
   resolution?: 'accepted' | 'rejected'
+  attachments?: Attachment[]
+  replyTo?: string // id of the message being replied to
 }
 
 export type PayoutKind = 'deposit' | 'milestone' | 'auto' | 'ruling' | 'refund'
@@ -110,6 +131,22 @@ export type Payout = {
   kind: PayoutKind
 }
 
+// A cancel needs every signer to agree once money is in the vault.
+export type CancelRequest = {
+  proposedBy: Handle
+  reason: string
+  at: string
+  approvals: Handle[]
+}
+
+export type Profile = {
+  handle: Handle
+  name: string
+  bio: string
+  skills: string[]
+  portfolio?: string
+}
+
 export type Project = {
   id: string
   name: string
@@ -119,8 +156,12 @@ export type Project = {
   roles: Role[]
   version: number // bumps on every change to the draft
   status: ProjectStatus
-  messages: Message[]
+  messages: Message[] // group chat: the official record, and evidence in a dispute
+  dms: Record<string, Message[]> // private 1:1 chats, keyed by dmKey(a, b). Never evidence.
   payouts: Payout[]
+  cancel?: CancelRequest
   fundedAt?: string
   createdAt: string
 }
+
+export const dmKey = (a: Handle, b: Handle) => [a, b].sort().join('|')

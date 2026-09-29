@@ -14,15 +14,19 @@ import {
   rebalance,
   revisionsLeft,
   schedule,
+  vault,
 } from './lib/rules'
 import {
   REVIEWER,
+  dmKey,
+  type Attachment,
   type FileRef,
   type Handle,
   type Message,
   type Milestone,
   type Payout,
   type PayoutPreference,
+  type Profile,
   type Project,
   type Role,
 } from './types'
@@ -30,14 +34,20 @@ import {
 // Front-end-only store for the MVP prototype. Everything lives in
 // localStorage; Supabase (drafts, chat, files) and the Base vault replace it later.
 
-export const PEOPLE: Handle[] = ['@louis', '@tobi', '@ada', '@kemi', REVIEWER]
+export const PEOPLE: Handle[] = ['@louis', '@tobi', '@ada', '@kemi', '@zara', REVIEWER]
 
 type State = {
   me: Handle
   projects: Project[]
+  profiles: Record<Handle, Profile>
+  // Last time each person looked at each chat: `${projectId}:${channel}:${handle}` → ISO time. Drives the ✓✓ ticks.
+  seen: Record<string, string>
   // Demo time travel: lets you see auto-approve and missed-deadline rules fire.
   clockOffset: number
 }
+
+export type Channel = 'group' | string // 'group' or a dmKey
+export type DraftEdit = Pick<Project, 'name' | 'brief' | 'deadline' | 'roles'>
 
 type Target = { projectId: string; roleId: string; milestoneId: string }
 
@@ -48,7 +58,16 @@ type Action =
   | { type: 'counter'; projectId: string; roleId: string; amount: number; depositPct: number; note: string }
   | { type: 'decline'; projectId: string; roleId: string; note: string }
   | { type: 'resolveCounter'; projectId: string; messageId: string; accept: boolean }
-  | { type: 'say'; projectId: string; text: string }
+  | { type: 'say'; projectId: string; text: string; attachments?: Attachment[]; replyTo?: string; to?: Handle }
+  | { type: 'seen'; projectId: string; channel: Channel }
+  | { type: 'apply'; projectId: string; roleId: string; portfolio: string; note: string; amount?: number }
+  | { type: 'pick'; projectId: string; roleId: string; handle: Handle }
+  | { type: 'editDraft'; projectId: string; draft: DraftEdit }
+  | { type: 'cancelDraft'; projectId: string; reason: string }
+  | { type: 'proposeCancel'; projectId: string; reason: string }
+  | { type: 'approveCancel'; projectId: string }
+  | { type: 'withdrawCancel'; projectId: string }
+  | { type: 'updateProfile'; profile: Profile }
   | { type: 'fund'; projectId: string }
   | ({ type: 'submit'; note: string; files: FileRef[] } & Target)
   | ({ type: 'review'; kind: 'approved' | 'changes'; note: string } & Target)
@@ -66,6 +85,19 @@ export const signedCount = (p: Project) => p.roles.filter((r) => isSigned(p, r))
 const name = (h: Handle) =>
   h === REVIEWER ? 'CrewPay review' : h.replace(/^@/, '').replace(/^./, (c) => c.toUpperCase())
 const money = (n: number) => `$${n.toLocaleString('en-US')}`
+
+// Everyone whose agreement a cancel needs: the Lead and every signed collaborator.
+export const parties = (p: Project) => [p.lead, ...p.roles.map((r) => r.assignee).filter((h): h is Handle => !!h)]
+
+// A tiny inline illustration so the demo chat has a real image attachment.
+const DEMO_IMAGE =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 200"><rect width="320" height="200" fill="#f4e3c3"/>' +
+      '<circle cx="90" cy="100" r="54" fill="#ff6a3d"/><circle cx="150" cy="100" r="54" fill="#1d1b16" fill-opacity=".85"/>' +
+      '<rect x="200" y="46" width="90" height="16" rx="8" fill="#1d1b16"/><rect x="200" y="74" width="70" height="10" rx="5" fill="#6f6a5f"/>' +
+      '<rect x="200" y="92" width="80" height="10" rx="5" fill="#6f6a5f"/><rect x="200" y="130" width="60" height="24" rx="12" fill="#ff6a3d"/></svg>',
+  )
 
 // ---------- demo data ----------
 
@@ -94,6 +126,7 @@ function seed(): State {
     status: 'signing',
     createdAt: ago(1.1),
     payouts: [],
+    dms: {},
     roles: [
       {
         id: 'r-prod',
@@ -126,6 +159,21 @@ function seed(): State {
         pay: 300,
         depositPct: 10,
         response: 'pending',
+        applicants: [
+          {
+            handle: '@zara',
+            portfolio: 'https://soundcloud.com/zara-mixes',
+            note: 'I mixed two afrobeats EPs this year, both charted on Apple Music NG. Happy to do a free test mix of 30 seconds.',
+            amount: 350,
+            at: ago(0.5),
+          },
+          {
+            handle: '@kemi',
+            portfolio: 'https://kemi.studio/audio',
+            note: 'Mostly podcasts, but I have a treated room and I work fast.',
+            at: ago(0.3),
+          },
+        ],
         milestones: [
           ms({ id: 'm4', title: 'Final mix + master', doneWhen: '4 mastered WAVs at -14 LUFS, 1 round of notes included.', pct: 90, due: day(55) }),
         ],
@@ -159,6 +207,7 @@ function seed(): State {
     status: 'signing',
     createdAt: ago(0.2),
     payouts: [],
+    dms: {},
     roles: [
       {
         id: 'r-illus',
@@ -326,6 +375,7 @@ function seed(): State {
     ],
     payouts: [],
     messages: [],
+    dms: {},
   }
   oja.payouts = [
     ...oja.roles.map<Payout>((r) => ({
@@ -349,11 +399,32 @@ function seed(): State {
       at: ago(27),
     }),
     msg({ author: '@louis', kind: 'text', text: 'The photos are the whole point of the shop, keep them.', at: ago(26.9) }),
+    msg({
+      author: '@ada',
+      kind: 'text',
+      text: 'First look at the homepage hero. Swatches rotate every 4 seconds.',
+      at: ago(12),
+      attachments: [{ name: 'oja-hero-draft.svg', size: 612, mime: 'image/svg+xml', kind: 'image', url: DEMO_IMAGE }],
+    }),
     msg({ author: 'system', kind: 'system', text: 'Louis approved “Homepage + catalogue design”. Vault paid Ada $280.', at: ago(8) }),
     msg({ author: 'system', kind: 'system', text: 'Tobi opened a dispute on “Site live on staging”. CrewPay review will rule.', at: ago(1) }),
   ]
 
-  return { me: '@louis', projects: [oja, lagos, kora], clockOffset: 0 }
+  oja.dms[dmKey('@louis', '@ada')] = [
+    msg({ author: '@ada', kind: 'text', text: 'Quick one: can I use the shop owner’s photos from Instagram for the hero?', at: ago(11) }),
+    msg({ author: '@louis', kind: 'text', text: 'Yes, she said any of them. I’ll confirm in the group chat so it’s on record.', at: ago(10.9) }),
+  ]
+
+  const profiles: Record<Handle, Profile> = {
+    '@louis': { handle: '@louis', name: 'Louis', bio: 'Product designer in Lagos. I start projects and build crews to ship them.', skills: ['Product design', 'Brand', 'Frontend'], portfolio: 'https://louis.design' },
+    '@tobi': { handle: '@tobi', name: 'Tobi', bio: 'Producer and frontend developer. Afrobeats by night, React by day.', skills: ['Music production', 'React', 'Performance'] },
+    '@ada': { handle: '@ada', name: 'Ada', bio: 'Vocalist, web and motion designer.', skills: ['Vocals', 'Web design', 'Motion'], portfolio: 'https://ada.works' },
+    '@kemi': { handle: '@kemi', name: 'Kemi', bio: 'Copywriter and creative director. English and Yoruba.', skills: ['Copywriting', 'Creative direction'] },
+    '@zara': { handle: '@zara', name: 'Zara', bio: 'Mix and mastering engineer.', skills: ['Mixing', 'Mastering'], portfolio: 'https://soundcloud.com/zara-mixes' },
+    [REVIEWER]: { handle: REVIEWER, name: 'CrewPay review', bio: 'Neutral reviewers who rule on disputes.', skills: [] },
+  }
+
+  return { me: '@louis', projects: [oja, lagos, kora], profiles, seen: {}, clockOffset: 0 }
 }
 
 // ---------- reducer ----------
@@ -479,8 +550,130 @@ function reduceProject(p: Project, a: Action, c: Ctx): Project {
       const text = `Draft v${version}: ${role.title} is now ${money(offer.amount!)} with ${depositPct}% up front. The terms changed, so everyone signs the new version.`
       return withStatus({ ...p, version, roles, messages: [...messages, sys(c, text)] })
     }
-    case 'say':
-      return { ...p, messages: [...p.messages, { id: uid(), author: c.me, at: c.iso, kind: 'text', text: a.text }] }
+    case 'say': {
+      const m: Message = { id: uid(), author: c.me, at: c.iso, kind: 'text', text: a.text, attachments: a.attachments, replyTo: a.replyTo }
+      if (!a.to) return { ...p, messages: [...p.messages, m] }
+      const key = dmKey(c.me, a.to)
+      return { ...p, dms: { ...p.dms, [key]: [...(p.dms[key] ?? []), m] } }
+    }
+    case 'apply': {
+      const role = p.roles.find((r) => r.id === a.roleId)
+      if (!role || role.assignee || c.me === p.lead || role.applicants?.some((x) => x.handle === c.me)) return p
+      const applicant = { handle: c.me, portfolio: a.portfolio, note: a.note, amount: a.amount, at: c.iso }
+      return {
+        ...p,
+        roles: p.roles.map((r) => (r.id === role.id ? { ...r, applicants: [...(r.applicants ?? []), applicant] } : r)),
+        messages: [
+          ...p.messages,
+          sys(c, `${name(c.me)} applied for ${role.title}${a.amount && a.amount !== role.pay ? `, asking ${money(a.amount)}` : ''}.`),
+        ],
+      }
+    }
+    case 'pick': {
+      const role = p.roles.find((r) => r.id === a.roleId)
+      const applicant = role?.applicants?.find((x) => x.handle === a.handle)
+      if (!role || !applicant || c.me !== p.lead || role.assignee) return p
+      // Picking someone at a different price changes the terms, so everyone signs again.
+      const repriced = applicant.amount !== undefined && applicant.amount !== role.pay
+      const version = repriced ? p.version + 1 : p.version
+      const roles = p.roles.map((r) =>
+        r.id === role.id
+          ? { ...r, assignee: a.handle, pay: repriced ? applicant.amount! : r.pay, response: 'pending' as const, applicants: [] }
+          : repriced && r.response !== 'declined'
+            ? { ...r, response: 'pending' as const }
+            : r,
+      )
+      const text = repriced
+        ? `Draft v${version}: ${name(p.lead)} picked ${name(a.handle)} for ${role.title} at ${money(applicant.amount!)}. The budget changed, so everyone signs again.`
+        : `${name(p.lead)} picked ${name(a.handle)} for ${role.title}. ${name(a.handle)} can now review and sign.`
+      return withStatus({ ...p, version, roles, messages: [...p.messages, sys(c, text)] })
+    }
+    case 'editDraft': {
+      if (c.me !== p.lead || (p.status !== 'signing' && p.status !== 'ready')) return p
+      const version = p.version + 1
+      const before = new Map(p.roles.map((r) => [r.id, r]))
+      const changes: string[] = []
+      if (a.draft.brief !== p.brief) changes.push('brief updated')
+      if (a.draft.deadline !== p.deadline) changes.push('deadline moved')
+      for (const r of a.draft.roles) {
+        const old = before.get(r.id)
+        if (!old) changes.push(`${r.title} added`)
+        else {
+          if (old.pay !== r.pay) changes.push(`${r.title} ${money(old.pay)} → ${money(r.pay)}`)
+          if (old.depositPct !== r.depositPct) changes.push(`${r.title} deposit ${old.depositPct}% → ${r.depositPct}%`)
+          if (old.assignee !== r.assignee) changes.push(`${r.title} now ${r.assignee ? name(r.assignee) : 'open'}`)
+          if (JSON.stringify(old.milestones.map((m) => [m.title, m.doneWhen, m.pct, m.due, m.revisions])) !==
+            JSON.stringify(r.milestones.map((m) => [m.title, m.doneWhen, m.pct, m.due, m.revisions])))
+            changes.push(`${r.title} milestones changed`)
+        }
+      }
+      for (const r of p.roles) if (!a.draft.roles.some((x) => x.id === r.id)) changes.push(`${r.title} removed`)
+      if (changes.length === 0 && a.draft.name === p.name) return p
+      const roles = a.draft.roles.map((r) => {
+        const old = before.get(r.id)
+        const samePerson = old && old.assignee === r.assignee
+        return {
+          ...r,
+          response: samePerson && old.response === 'declined' ? old.response : ('pending' as const),
+          signedVersion: samePerson ? old.signedVersion : undefined,
+          payout: samePerson ? old.payout : undefined,
+          applicants: r.assignee ? [] : (old?.applicants ?? []),
+        }
+      })
+      // Open counter-offers were about the old terms; close them.
+      const messages = p.messages.map((m) => (m.kind === 'counter' && !m.resolution ? { ...m, resolution: 'rejected' as const } : m))
+      const text = `Draft v${version}: ${name(p.lead)} edited the draft (${changes.join(', ') || 'renamed'}). Everyone signs the new version.`
+      return withStatus({ ...p, ...a.draft, version, roles, messages: [...messages, sys(c, text)] })
+    }
+    case 'cancelDraft': {
+      // Before funding nothing is locked, so the Lead can call it off alone.
+      if (c.me !== p.lead || (p.status !== 'signing' && p.status !== 'ready')) return p
+      return {
+        ...p,
+        status: 'cancelled',
+        messages: [...p.messages, sys(c, `${name(p.lead)} cancelled the project before funding.${a.reason ? ` “${a.reason}”` : ''} No money moved.`)],
+      }
+    }
+    case 'proposeCancel': {
+      if (p.status !== 'funded' || p.cancel || !parties(p).includes(c.me)) return p
+      return {
+        ...p,
+        cancel: { proposedBy: c.me, reason: a.reason, at: c.iso, approvals: [c.me] },
+        messages: [...p.messages, sys(c, `${name(c.me)} asked to cancel the project: “${a.reason}”. It needs everyone’s agreement.`)],
+      }
+    }
+    case 'withdrawCancel': {
+      if (!p.cancel || !parties(p).includes(c.me)) return p
+      const text =
+        c.me === p.cancel.proposedBy
+          ? `${name(c.me)} withdrew the cancel request. Work continues.`
+          : `${name(c.me)} said no to cancelling. Work continues.`
+      return { ...p, cancel: undefined, messages: [...p.messages, sys(c, text)] }
+    }
+    case 'approveCancel': {
+      if (!p.cancel || !parties(p).includes(c.me) || p.cancel.approvals.includes(c.me)) return p
+      const approvals = [...p.cancel.approvals, c.me]
+      if (!parties(p).every((h) => approvals.includes(h)))
+        return {
+          ...p,
+          cancel: { ...p.cancel, approvals },
+          messages: [...p.messages, sys(c, `${name(c.me)} agreed to cancel (${approvals.length} of ${parties(p).length}).`)],
+        }
+      // Everyone agreed: whatever is still in the vault goes back to the Lead. Money already paid stays paid.
+      const held = vault(p).held
+      const roles = p.roles.map((r) => ({
+        ...r,
+        milestones: r.milestones.map((m) => (isSettled(m) ? m : { ...m, status: 'cancelled' as const })),
+      }))
+      return {
+        ...p,
+        roles,
+        status: 'cancelled',
+        cancel: { ...p.cancel, approvals },
+        payouts: held > 0 ? [...p.payouts, { id: uid(), at: c.iso, roleId: '', to: p.lead, amount: held, kind: 'refund' }] : p.payouts,
+        messages: [...p.messages, sys(c, `Everyone agreed. The project is cancelled and ${money(held)} still in the vault went back to ${name(p.lead)}.`)],
+      }
+    }
     case 'fund': {
       if (p.status !== 'ready') return p
       // Deposits go out first, the moment money lands in the vault.
@@ -626,6 +819,10 @@ function reducer(state: State, a: Action): State {
       return seed()
     case 'create':
       return { ...state, projects: [a.project, ...state.projects] }
+    case 'seen':
+      return { ...state, seen: { ...state.seen, [`${a.projectId}:${a.channel}:${state.me}`]: c.iso } }
+    case 'updateProfile':
+      return { ...state, profiles: { ...state.profiles, [a.profile.handle]: a.profile } }
     case 'advance': {
       const offset = state.clockOffset + a.days * DAY
       const later: Ctx = { ...c, now: Date.now() + offset, iso: new Date(Date.now() + offset).toISOString() }
@@ -638,7 +835,7 @@ function reducer(state: State, a: Action): State {
 
 // ---------- provider ----------
 
-const KEY = 'crewpay:v2'
+const KEY = 'crewpay:v3'
 
 function load(): State {
   try {
