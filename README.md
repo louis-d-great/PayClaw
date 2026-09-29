@@ -36,6 +36,11 @@ Use **Viewing as** in the top bar to switch between Louis, Tobi, Ada, Kemi and *
 5. As **Tobi**, submit **Launch + handover**, then press **Skip 7 days**. It auto-approves and pays.
 6. As Louis, open *Lagos Nights EP* and accept Ada's counter-offer ($550, 30% up front). Everyone has to sign again.
 
+7. **Chat:** in any project, reply to a message, attach a photo or file, or record a voice note (🎙). The tabs above the chat switch between the group chat and a private DM with each member.
+8. **Open roles:** as **Tobi**, open the Mix engineer invite on *Lagos Nights EP* and apply with a portfolio link. Back as Louis, pick an applicant.
+9. **Edit or cancel:** before funding, the Lead can **Edit draft** (everyone re-signs) or cancel. After funding, **Cancel the project** needs everyone to agree.
+10. **Profiles:** click anyone's name, or **Profile** in the top bar, to see their track record and work receipts.
+
 ## Milestone rules
 
 | Rule | What happens |
@@ -56,7 +61,7 @@ All of these live in `src/lib/rules.ts`, which is what the vault contract will e
 | --- | --- | --- |
 | Screens, flow, rules (signing, versions, counter-offers) | Real | — |
 | Accounts | "Viewing as" switcher | Sign-in + Coinbase Smart Wallet |
-| Storage + chat | `localStorage` | Supabase |
+| Storage, chat, DMs, profiles | `localStorage` (small files kept inline) | Supabase: schema and security rules ready on the `claude/backend-setup` branch |
 | Signatures | Button | EIP-712 signature over (project, version, role, pay) |
 | Vault + payouts | Simulated ledger | Solidity escrow on Base: deposits, milestone release, auto-approve, rulings |
 | Files | Names only | Supabase Storage, finals locked until paid |
@@ -84,6 +89,9 @@ src/
   lib/rules.ts           Deposit, milestone, review, dispute and reclaim rules
   pages/ProjectPage      Signatures, invite links, funding, vault, work, chat
   pages/MilestonePage    Submit, review, revisions, dispute and ruling
+  pages/ProfilePage      Track record and work history
+  pages/ReceiptPage      Public work receipt for a project
+  components/Chat        Group chat + DMs: replies, files, voice notes, seen ticks
+  lib/reputation.ts      Track record computed from signed work and payouts
   pages/Dashboard        Projects I lead / Projects I'm on
-  components/Chat        Chat with counter-offer cards the Lead answers in one tap
 ```
