@@ -21,7 +21,7 @@ export default function Layout() {
   const { me, dispatch, clockOffset } = useStore()
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-line/70 bg-paper/85 backdrop-blur">
+      <header className="sticky top-[env(safe-area-inset-top,0px)] z-20 border-b border-line/70 bg-paper/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Logo />
           <nav className="ml-2 hidden items-center gap-1 sm:flex">
@@ -59,7 +59,7 @@ export default function Layout() {
         <Outlet />
       </main>
       {/* Prototype only: move the clock forward to watch time-based rules fire. */}
-      <div className="fixed bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card/95 py-1.5 pl-4 pr-1.5 text-xs shadow-[0_8px_30px_-12px_rgba(29,27,22,.35)] backdrop-blur">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-card/95 py-1.5 pl-4 pr-1.5 text-xs shadow-[0_8px_30px_-12px_rgba(29,27,22,.35)] backdrop-blur">
         <span className="text-muted">
           Demo clock{clockOffset > 0 ? ` · +${Math.round(clockOffset / 86_400_000)} days` : ''}
         </span>
