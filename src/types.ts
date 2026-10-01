@@ -105,8 +105,10 @@ export type Attachment = {
   size: number
   mime: string
   kind: 'image' | 'audio' | 'video' | 'file'
-  // Small files are kept inline as a data URL in the prototype. Supabase Storage replaces this.
+  // Demo: small files inline as a data URL. Live: a short-lived signed link to Supabase Storage.
   url?: string
+  path?: string // live: where the file sits in Storage
+  blob?: Blob // the picked file, kept only until it's uploaded
 }
 
 export type Message = {
@@ -166,6 +168,8 @@ export type Project = {
   cancel?: CancelRequest
   fundedAt?: string
   createdAt: string
+  // Live: loaded from an invite link by someone who isn't on the crew yet (no chat, no money).
+  guest?: boolean
 }
 
 export const dmKey = (a: Handle, b: Handle) => [a, b].sort().join('|')

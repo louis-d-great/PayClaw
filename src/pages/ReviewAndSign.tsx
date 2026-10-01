@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Avatar, Badge, Button, Card, Input, Label, Money, TextArea } from '../components/ui'
 import Rules from '../components/Rules'
@@ -13,10 +13,21 @@ type Panel = 'none' | 'sign' | 'counter' | 'decline'
 
 export default function ReviewAndSign() {
   const { projectId, roleId } = useParams()
-  const { projects, me } = useStore()
+  const { projects, me, loadProject } = useStore()
   const project = projects.find((p) => p.id === projectId)
   const role = project?.roles.find((r) => r.id === roleId)
+  // Live: someone opening an invite link isn't on the crew yet, so fetch the invite itself.
+  const [loading, setLoading] = useState(!project)
+  useEffect(() => {
+    if (!projectId || project) return
+    let live = true
+    loadProject(projectId).finally(() => live && setLoading(false))
+    return () => {
+      live = false
+    }
+  }, [projectId, project, loadProject])
 
+  if ((!project || !role) && loading) return <p className="py-24 text-center text-muted">Opening invite…</p>
   if (!project || !role)
     return (
       <div className="py-24 text-center">

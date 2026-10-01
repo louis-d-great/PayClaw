@@ -13,7 +13,9 @@ Three free accounts turn the prototype into a real app. Each takes a few minutes
 1. Go to https://supabase.com and sign up with GitHub.
 2. **New project**. Name it `crewpay`, choose a strong database password (save it in a password manager), and pick the region closest to most of your users.
 3. When it's ready, open **SQL Editor → New query**. Paste all of `supabase/migrations/0001_init.sql` and click **Run**. It should say "Success".
+   Then do the same with `supabase/migrations/0002_live_actions.sql` (the actions the app calls: create, sign, counter-offer, apply, edit).
 4. Open **Authentication → Providers** and check that **Email** is on. Magic links are enough to start.
+   Then open **Authentication → URL Configuration**: set **Site URL** to `http://localhost:5173` and add `http://localhost:5173/**` under **Redirect URLs**, so sign-in links open the app. Add your Vercel address the same way once you have one.
 5. Open **Project Settings → API**.
    - **Send:** the **Project URL**.
    - **Send:** the **anon public** key. It's designed to be public; the security rules above protect the data.

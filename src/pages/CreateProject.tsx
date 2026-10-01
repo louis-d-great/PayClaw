@@ -127,7 +127,7 @@ export default function CreateProject({ editing }: { editing?: Project }) {
       return
     }
     const project: Project = {
-      id: `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${uid().slice(0, 4)}`,
+      id: uid(),
       name: name.trim(),
       brief: brief.trim(),
       deadline: deadline || undefined,

@@ -9,10 +9,10 @@ import { REVIEWER, type Project } from '../types'
 type View = 'lead' | 'crew'
 
 export default function Dashboard() {
-  const { projects, me, dispatch } = useStore()
+  const { projects, me, dispatch, mode } = useStore()
   const [view, setView] = useState<View>('lead')
 
-  const leading = projects.filter((p) => p.lead === me)
+  const leading = projects.filter((p) => p.lead === me && !p.guest)
   const joined = projects.filter((p) => p.lead !== me && p.roles.some((r) => r.assignee === me))
   const myRoles = joined.flatMap((p) => p.roles.filter((r) => r.assignee === me).map((r) => ({ p, r })))
   const toSign = myRoles.filter(({ p, r }) => p.status === 'signing' && !isSigned(p, r))
@@ -82,9 +82,11 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-        <button onClick={() => dispatch({ type: 'reset' })} className="ml-auto text-xs text-muted hover:text-ink">
-          Reset demo data
-        </button>
+        {mode === 'demo' && (
+          <button onClick={() => dispatch({ type: 'reset' })} className="ml-auto text-xs text-muted hover:text-ink">
+            Reset demo data
+          </button>
+        )}
       </div>
 
       {list.length === 0 ? (

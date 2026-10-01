@@ -19,9 +19,10 @@ Groups who work and get paid together (music collabs, design duos, freelance tea
 
 ## State of the code
 
-- Front-end prototype (React 19, TypeScript, Tailwind v4, Vite, React Router). Wallets, vault and database are mocked; data lives in `localStorage`. "Viewing as" switches users; "Skip 7 days" moves the demo clock.
+- React 19, TypeScript, Tailwind v4, Vite, React Router. Two modes in `src/store.tsx`: **live** (Supabase, when `.env.local` has `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) and **demo** (`localStorage`, "Viewing as", "Skip 7 days"). Live covers sign-in, profiles, projects, signing, counter-offers, open roles, draft edits and chat/DMs with files; `src/live.ts` maps rows to the app's types and actions to database functions in `supabase/migrations/0002_live_actions.sql`. Funding, milestone work and disputes are demo-only until the vault is wired.
+- Database tests: `supabase/tests/run.sh` (CI runs it). Every cross-person action and every system message goes through a security-definer function; clients can't write system messages.
 - `main` on GitHub (`louis-d-great/PayClaw`) has the full app (milestones, disputes, chat with files/voice/DMs, applications, edit/cancel, profiles, `npm start`), the Solidity vault for Base with tests and CI, and the Supabase schema + security rules and Vercel config.
-- Next: move storage/chat/files to Supabase (needs the user's project URL and public key), real sign-in + Coinbase Smart Wallet, EIP-712 signatures, wire the vault.
+- Next: Coinbase Smart Wallet, EIP-712 signatures, wire the vault, then milestone work and disputes live.
 
 ## Working here
 

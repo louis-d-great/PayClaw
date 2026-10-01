@@ -1,4 +1,8 @@
-import { createContext, useContext, useEffect, useReducer, useState, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
+import { LIVE_ACTIONS, People, fetchInvite, fetchProfiles, fetchProjects, perform } from './live'
+import { supabase } from './lib/supabase'
+import { Onboarding, SignIn, Splash } from './pages/Auth'
 import { uid } from './lib/format'
 import {
   AUTO_APPROVE_DAYS,
@@ -36,7 +40,7 @@ import {
 
 export const PEOPLE: Handle[] = ['@louis', '@tobi', '@ada', '@kemi', '@zara', REVIEWER]
 
-type State = {
+export type State = {
   me: Handle
   projects: Project[]
   profiles: Record<Handle, Profile>
@@ -51,7 +55,7 @@ export type DraftEdit = Pick<Project, 'name' | 'brief' | 'deadline' | 'roles'>
 
 type Target = { projectId: string; roleId: string; milestoneId: string }
 
-type Action =
+export type Action =
   | { type: 'switchUser'; me: Handle }
   | { type: 'create'; project: Project }
   | { type: 'accept'; projectId: string; roleId: string; payout: PayoutPreference }
@@ -82,8 +86,15 @@ export const isSigned = (p: Project, r: Role) => r.signedVersion === p.version
 export const budget = (p: Project) => p.roles.reduce((sum, r) => sum + r.pay, 0)
 export const signedCount = (p: Project) => p.roles.filter((r) => isSigned(p, r)).length
 
+// Live mode fills this with people's real names from their profiles.
+const liveNames = new Map<Handle, string>()
+export const setLiveNames = (names: [Handle, string][]) => {
+  liveNames.clear()
+  for (const [h, n] of names) liveNames.set(h, n)
+}
+
 const name = (h: Handle) =>
-  h === REVIEWER ? 'CrewPay review' : h.replace(/^@/, '').replace(/^./, (c) => c.toUpperCase())
+  liveNames.get(h) ?? (h === REVIEWER ? 'CrewPay review' : h.replace(/^@/, '').replace(/^./, (c) => c.toUpperCase()))
 const money = (n: number) => `$${n.toLocaleString('en-US')}`
 
 // Everyone whose agreement a cancel needs: the Lead and every signed collaborator.
@@ -101,7 +112,7 @@ const DEMO_IMAGE =
 
 // ---------- demo data ----------
 
-function seed(): State {
+export function seed(): State {
   const t = Date.now()
   const ago = (days: number) => new Date(t - days * DAY).toISOString()
   const day = (offset: number) => new Date(t + offset * DAY).toISOString().slice(0, 10)
@@ -551,7 +562,9 @@ function reduceProject(p: Project, a: Action, c: Ctx): Project {
       return withStatus({ ...p, version, roles, messages: [...messages, sys(c, text)] })
     }
     case 'say': {
-      const m: Message = { id: uid(), author: c.me, at: c.iso, kind: 'text', text: a.text, attachments: a.attachments, replyTo: a.replyTo }
+      // The picked file itself isn't kept in state; live mode uploads it separately.
+      const attachments = a.attachments?.map(({ blob: _blob, ...x }) => x)
+      const m: Message = { id: uid(), author: c.me, at: c.iso, kind: 'text', text: a.text, attachments, replyTo: a.replyTo }
       if (!a.to) return { ...p, messages: [...p.messages, m] }
       const key = dmKey(c.me, a.to)
       return { ...p, dms: { ...p.dms, [key]: [...(p.dms[key] ?? []), m] } }
@@ -809,7 +822,7 @@ function mapMilestoneWithLog(
   return log ? { ...next, messages: [...next.messages, sys(c, log)] } : p
 }
 
-function reducer(state: State, a: Action): State {
+export function reducer(state: State, a: Action): State {
   const now = Date.now() + state.clockOffset
   const c: Ctx = { now, iso: new Date(now).toISOString(), me: state.me }
   switch (a.type) {
@@ -835,39 +848,264 @@ function reducer(state: State, a: Action): State {
 
 // ---------- provider ----------
 
+// Demo: everything in this browser, "Viewing as" to play every side.
+// Live: Supabase sign-in, projects and chat (needs VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY).
+export type Mode = 'demo' | 'live'
+
+type Store = State & {
+  dispatch: (a: Action) => void
+  now: number
+  mode: Mode
+  setMode: (m: Mode) => void
+  notice: string
+  clearNotice: () => void
+  signOut: () => void
+  // Live: fetch a project you were sent a link to but aren't on yet. Demo: nothing to fetch.
+  loadProject: (id: string) => Promise<void>
+}
+
+const StoreCtx = createContext<Store | null>(null)
+
 const KEY = 'crewpay:v3'
+const MODE_KEY = 'crewpay:mode'
+
+function read(key: string) {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Not critical.
+  }
+}
 
 function load(): State {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = read(KEY)
     if (raw) return JSON.parse(raw) as State
   } catch {
-    // Storage blocked or corrupt: fall back to demo data.
+    // Corrupt: fall back to demo data.
   }
   return seed()
 }
 
-type Store = State & { dispatch: (a: Action) => void; now: number }
-
-const StoreCtx = createContext<Store | null>(null)
-
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load)
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state))
-    } catch {
-      // Not critical for a prototype.
-    }
-  }, [state])
-  // Wall clock ticks every 30s so countdowns stay live; the demo offset moves it forward on "advance".
+// Wall clock ticks every 30s so countdowns stay live.
+function useWallClock() {
   const [wall, setWall] = useState(() => Date.now())
   useEffect(() => {
     const t = setInterval(() => setWall(Date.now()), 30_000)
     return () => clearInterval(t)
   }, [])
-  const now = wall + state.clockOffset
-  return <StoreCtx.Provider value={{ ...state, dispatch, now }}>{children}</StoreCtx.Provider>
+  return wall
+}
+
+export function StoreProvider({ children }: { children: ReactNode }) {
+  const [mode, setModeState] = useState<Mode>(() => (supabase && read(MODE_KEY) !== 'demo' ? 'live' : 'demo'))
+  const setMode = useCallback((m: Mode) => {
+    write(MODE_KEY, m)
+    setLiveNames([])
+    setModeState(m)
+  }, [])
+  return mode === 'live' ? (
+    <LiveProvider setMode={setMode}>{children}</LiveProvider>
+  ) : (
+    <DemoProvider setMode={setMode}>{children}</DemoProvider>
+  )
+}
+
+function DemoProvider({ children, setMode }: { children: ReactNode; setMode: (m: Mode) => void }) {
+  const [state, dispatch] = useReducer(reducer, undefined, load)
+  useEffect(() => write(KEY, JSON.stringify(state)), [state])
+  const now = useWallClock() + state.clockOffset
+  const value: Store = {
+    ...state,
+    dispatch,
+    now,
+    mode: 'demo',
+    setMode,
+    notice: '',
+    clearNotice: () => {},
+    signOut: () => {},
+    loadProject: async () => {},
+  }
+  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
+}
+
+function LiveProvider({ children, setMode }: { children: ReactNode; setMode: (m: Mode) => void }) {
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  useEffect(() => {
+    const sb = supabase!
+    sb.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data } = sb.auth.onAuthStateChange((_event, s) => setSession(s))
+    return () => data.subscription.unsubscribe()
+  }, [])
+  if (session === undefined) return <Splash />
+  if (!session) return <SignIn onDemo={() => setMode('demo')} />
+  return (
+    <LiveSession key={session.user.id} userId={session.user.id} setMode={setMode}>
+      {children}
+    </LiveSession>
+  )
+}
+
+type LiveState = { me: Handle; projects: Project[]; profiles: Record<Handle, Profile>; seen: Record<string, string> }
+
+const NOT_LIVE = 'Funding, milestone work and disputes go live with the vault. Try them in the demo for now.'
+
+function LiveSession({ userId, children, setMode }: { userId: string; children: ReactNode; setMode: (m: Mode) => void }) {
+  const [people] = useState(() => new People())
+  const [state, setState] = useState<LiveState | undefined>()
+  const [needsProfile, setNeedsProfile] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [failed, setFailed] = useState('')
+  const latest = useRef(state)
+  useEffect(() => {
+    latest.current = state
+  }, [state])
+
+  const publish = useCallback(
+    (fn: (s: LiveState) => LiveState) =>
+      setState((s) => {
+        if (!s) return s
+        setLiveNames([...people.byId.values()].map((p) => [`@${p.handle}`, p.name]))
+        return { ...fn(s), profiles: people.profiles() }
+      }),
+    [people],
+  )
+
+  const loadAll = useCallback(async () => {
+    try {
+      const [mine] = await fetchProfiles([userId])
+      if (!mine) return setNeedsProfile(true)
+      people.add([mine])
+      setNeedsProfile(false)
+      const { projects, seen } = await fetchProjects(people)
+      setLiveNames([...people.byId.values()].map((p) => [`@${p.handle}`, p.name]))
+      // Keep invites opened from a link; they aren't in the list of projects you're on.
+      setState((s) => ({
+        me: `@${mine.handle}`,
+        projects: [...projects, ...(s?.projects.filter((p) => p.guest && !projects.some((x) => x.id === p.id)) ?? [])],
+        profiles: people.profiles(),
+        seen,
+      }))
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : String(e))
+    }
+  }, [people, userId])
+
+  const reload = useCallback(
+    async (ids: string[]) => {
+      try {
+        const { projects, seen } = await fetchProjects(people, ids)
+        const guests = await Promise.all(
+          ids.filter((id) => !projects.some((p) => p.id === id)).map((id) => fetchInvite(people, id, userId)),
+        )
+        const fresh = [...projects, ...guests.filter((p): p is Project => !!p)]
+        publish((s) => {
+          const rest = s.projects.filter((p) => !ids.includes(p.id))
+          return {
+            ...s,
+            projects: [...fresh, ...rest].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+            seen: { ...s.seen, ...seen },
+          }
+        })
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e))
+      }
+    },
+    [people, publish, userId],
+  )
+
+  useEffect(() => {
+    loadAll()
+  }, [loadAll])
+
+  // Live updates: the database only sends changes this person is allowed to see.
+  useEffect(() => {
+    const sb = supabase!
+    const pending = new Set<string>()
+    let everything = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const flush = () => {
+      if (everything) loadAll()
+      else if (pending.size) reload([...pending])
+      pending.clear()
+      everything = false
+    }
+    const channel = sb.channel(`crewpay:${userId}`)
+    for (const table of ['messages', 'message_reads', 'projects', 'roles', 'milestones', 'submissions']) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        const row = (payload.new && Object.keys(payload.new).length ? payload.new : payload.old) as Record<string, string> | undefined
+        const id = table === 'projects' ? row?.id : row?.project_id
+        if (id) pending.add(id)
+        else everything = true
+        clearTimeout(timer)
+        timer = setTimeout(flush, 250)
+      })
+    }
+    channel.subscribe()
+    return () => {
+      clearTimeout(timer)
+      sb.removeChannel(channel)
+    }
+  }, [loadAll, reload, userId])
+
+  const dispatch = useCallback(
+    (a: Action) => {
+      const s = latest.current
+      if (!s) return
+      if (!LIVE_ACTIONS.has(a.type)) return setNotice(NOT_LIVE)
+      const projectId = a.type === 'create' ? a.project.id : 'projectId' in a ? a.projectId : undefined
+      const project = s.projects.find((p) => p.id === projectId)
+      // Show the change straight away; the database's version replaces it a moment later.
+      publish((cur) => {
+        const next = reducer({ ...cur, clockOffset: 0 }, a)
+        return { ...cur, projects: next.projects, seen: next.seen }
+      })
+      perform(a, { meId: userId, people, project })
+        .then(() => {
+          if (a.type === 'updateProfile') loadAll()
+          else if (a.type !== 'seen' && projectId) reload([projectId])
+        })
+        .catch((e: unknown) => {
+          setNotice(e instanceof Error ? e.message : String(e))
+          if (projectId) reload([projectId])
+        })
+    },
+    [loadAll, people, publish, reload, userId],
+  )
+
+  const loadProject = useCallback(
+    async (id: string) => {
+      if (!latest.current?.projects.some((p) => p.id === id)) await reload([id])
+    },
+    [reload],
+  )
+
+  const clearNotice = useCallback(() => setNotice(''), [])
+  const now = useWallClock()
+  if (needsProfile) return <Onboarding userId={userId} onDone={loadAll} />
+  if (failed) return <Splash error={failed} onRetry={() => (setFailed(''), loadAll())} />
+  if (!state) return <Splash />
+
+  const value: Store = {
+    ...state,
+    clockOffset: 0,
+    dispatch,
+    now,
+    mode: 'live',
+    setMode,
+    notice,
+    clearNotice,
+    signOut: () => supabase!.auth.signOut(),
+    loadProject,
+  }
+  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
 }
 
 export function useStore() {
