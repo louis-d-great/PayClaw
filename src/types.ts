@@ -1,10 +1,69 @@
 // A handle like "@tobi". In the MVP this stands in for a real account + wallet.
 export type Handle = string
 
+// The neutral reviewer who rules on disputes. In the MVP that's the CrewPay team.
+export const REVIEWER: Handle = '@crewpay'
+
+export type FileRef = {
+  name: string
+  size: number // bytes
+  // Previews can be opened any time. Finals stay locked until the milestone is paid,
+  // so a Lead can't take the work without paying for it.
+  kind: 'preview' | 'final'
+}
+
+export type Review = {
+  kind: 'approved' | 'changes' | 'auto-approved'
+  note?: string
+  at: string
+}
+
+export type Submission = {
+  id: string
+  at: string
+  note: string
+  files: FileRef[]
+  review?: Review
+}
+
+export type Statement = { by: Handle; text: string; at: string }
+
+export type Dispute = {
+  openedBy: Handle
+  at: string
+  reason: string
+  statements: Statement[]
+  // Share of this milestone's money that goes to the collaborator; the rest returns to the Lead.
+  ruling?: { collaboratorPct: number; note: string; at: string }
+}
+
+export type MilestoneStatus =
+  | 'working' // nothing submitted yet, or changes requested
+  | 'submitted' // waiting for the Lead
+  | 'paid'
+  | 'disputed'
+  | 'resolved' // dispute ruled, money split
+  | 'reclaimed' // deadline missed with nothing submitted, money back to the Lead
+
 export type Milestone = {
   id: string
   title: string
+  doneWhen: string // definition of done, agreed at signing
+  pct: number // share of the role's pay
   due?: string // YYYY-MM-DD
+  revisions: number // rounds of changes the Lead may request before a dispute can open
+  status: MilestoneStatus
+  submissions: Submission[]
+  dispute?: Dispute
+}
+
+export type PayoutMethod = 'wallet' | 'bank'
+
+export type PayoutPreference = {
+  method: PayoutMethod
+  wallet?: string // 0x… address for USDC on Base
+  bank?: { name: string; account: string; currency: string } // phase 2, through an offramp
+  note?: string
 }
 
 export type RoleResponse = 'pending' | 'accepted' | 'countered' | 'declined'
@@ -14,11 +73,13 @@ export type Role = {
   title: string // free text, e.g. "Mix engineer"
   assignee?: Handle // empty = open role, anyone with the link can respond
   pay: number // fixed amount in USDC
+  depositPct: number // paid first, the moment the vault is funded
   milestones: Milestone[]
   response: RoleResponse
   // Version of the draft this person signed. A signature only counts
   // while it matches the project's current version.
   signedVersion?: number
+  payout?: PayoutPreference
 }
 
 export type ProjectStatus = 'signing' | 'ready' | 'funded' | 'done'
@@ -32,8 +93,21 @@ export type Message = {
   kind: MessageKind
   text: string
   roleId?: string
-  amount?: number // for counter-offers
+  amount?: number // counter-offer: proposed pay
+  depositPct?: number // counter-offer: proposed deposit
   resolution?: 'accepted' | 'rejected'
+}
+
+export type PayoutKind = 'deposit' | 'milestone' | 'auto' | 'ruling' | 'refund'
+
+export type Payout = {
+  id: string
+  at: string
+  roleId: string
+  milestoneId?: string
+  to: Handle
+  amount: number
+  kind: PayoutKind
 }
 
 export type Project = {
@@ -46,5 +120,7 @@ export type Project = {
   version: number // bumps on every change to the draft
   status: ProjectStatus
   messages: Message[]
+  payouts: Payout[]
+  fundedAt?: string
   createdAt: string
 }

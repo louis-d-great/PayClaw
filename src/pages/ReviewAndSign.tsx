@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Avatar, Badge, Button, Card, Input, Label, Money, TextArea } from '../components/ui'
+import Rules from '../components/Rules'
+import Schedule from '../components/Schedule'
 import { shortDate } from '../lib/format'
+import { amountFor } from '../lib/rules'
 import { roleStatus } from '../lib/status'
 import { isSigned, personName, useStore } from '../store'
-import type { Project, Role } from '../types'
+import type { PayoutPreference, Project, Role } from '../types'
 
 type Panel = 'none' | 'sign' | 'counter' | 'decline'
 
@@ -59,6 +62,17 @@ export default function ReviewAndSign() {
             {project.deadline && <Badge>Final deadline {shortDate(project.deadline)}</Badge>}
           </div>
           <p className="mt-6 whitespace-pre-line text-lg leading-relaxed">{project.brief}</p>
+
+          <h2 className="mt-10 mb-1 font-display text-xl font-bold">Your payment plan</h2>
+          <p className="mb-4 text-sm text-muted">
+            What you deliver, what counts as done, and what each step pays. You agree to all of it when you sign.
+          </p>
+          <Card className="px-5 pb-1 pt-3">
+            <Schedule project={project} role={role} showDoneWhen />
+          </Card>
+          <div className="mt-4">
+            <Rules defaultOpen />
+          </div>
         </div>
 
         <aside className="lg:sticky lg:top-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-start">
@@ -66,7 +80,7 @@ export default function ReviewAndSign() {
         </aside>
 
         <div className="lg:col-start-1">
-          <h2 className="mb-3 font-display text-xl font-bold">The whole crew</h2>
+          <h2 className="mb-1 font-display text-xl font-bold">The whole crew</h2>
           <p className="mb-4 text-sm text-muted">Everyone sees everyone’s pay. No side deals.</p>
           <Card className="divide-y divide-line">
             {project.roles.map((r) => (
@@ -105,6 +119,7 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
   const signed = isSigned(project, role)
   const openCounter = project.messages.find((m) => m.kind === 'counter' && m.roleId === role.id && !m.resolution)
   const needsResign = !signed && role.signedVersion !== undefined
+  const deposit = amountFor(role, 'deposit')
   const lastChange = [...project.messages].reverse().find((m) => m.kind === 'system' && m.text.startsWith('Draft v'))
 
   return (
@@ -115,24 +130,19 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
         <Money value={role.pay} className="mt-4 block text-5xl font-bold" />
         <p className="mt-1 text-sm text-muted">Fixed pay, held in the project vault</p>
 
-        <div className="mt-6 space-y-3">
-          {role.milestones.map((m, i) => (
-            <div key={m.id} className="flex items-start gap-3">
-              <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink/5 text-xs font-semibold">
-                {i + 1}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{m.title}</p>
-                {m.due && <p className="text-xs text-muted">Due {shortDate(m.due)}</p>}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 rounded-2xl bg-paper p-4 text-sm leading-relaxed text-muted">
-          <b className="text-ink">How you get paid.</b> {personName(project.lead)} funds the vault once everyone signs. When
-          they approve a milestone, the vault pays you. If they don’t respond within 7 days, it pays you anyway.
-        </div>
+        {deposit > 0 && (
+          <div className="mt-5 flex items-center gap-3 rounded-2xl bg-accent-soft/70 p-4">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-white">↑</span>
+            <p className="text-sm leading-snug">
+              <b>${deposit.toLocaleString('en-US')} up front</b> ({role.depositPct}%), paid the moment {personName(project.lead)} funds
+              the vault.
+            </p>
+          </div>
+        )}
+        <p className="mt-4 text-sm text-muted">
+          Then {role.milestones.length} milestone payment{role.milestones.length === 1 ? '' : 's'}, each released when approved, or
+          automatically after 7 days of silence.
+        </p>
       </div>
 
       <div className="border-t border-line bg-paper/50 p-6">
@@ -149,7 +159,7 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
         ) : openCounter && openCounter.author === me ? (
           <Done
             tone="accent"
-            title={`Counter-offer sent: $${openCounter.amount}`}
+            title={`Counter-offer sent: $${openCounter.amount}, ${openCounter.depositPct ?? role.depositPct}% up front`}
             body={`Waiting for ${personName(project.lead)} to reply. You can keep talking in the project chat.`}
             projectId={project.id}
           />
@@ -161,7 +171,9 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
           <CounterPanel
             role={role}
             onCancel={() => setPanel('none')}
-            onSend={(amount, note) => dispatch({ type: 'counter', projectId: project.id, roleId: role.id, amount, note })}
+            onSend={(amount, depositPct, note) =>
+              dispatch({ type: 'counter', projectId: project.id, roleId: role.id, amount, depositPct, note })
+            }
           />
         ) : panel === 'decline' ? (
           <DeclinePanel
@@ -197,21 +209,27 @@ function SignPanel({ project, role, onCancel }: { project: Project; role: Role; 
   const { dispatch } = useStore()
   const [understood, setUnderstood] = useState(false)
   const [stage, setStage] = useState<'confirm' | 'signing'>('confirm')
+  const [payout, setPayout] = useState<PayoutPreference>(role.payout ?? { method: 'wallet' })
+  const payoutReady =
+    payout.method === 'wallet'
+      ? true // the wallet they sign with receives the money unless they paste another address
+      : !!payout.bank?.name.trim() && !!payout.bank?.account.trim()
 
   const sign = () => {
     setStage('signing')
     // Stand-in for the wallet signature. On Base this becomes a typed-data signature
-    // over (projectId, version, roleId, pay), so nobody can reuse it for another draft.
-    setTimeout(() => dispatch({ type: 'accept', projectId: project.id, roleId: role.id }), 900)
+    // over (projectId, version, roleId, pay, depositPct, milestones), so nobody can reuse it for another draft.
+    setTimeout(() => dispatch({ type: 'accept', projectId: project.id, roleId: role.id, payout }), 900)
   }
 
   return (
     <div className="animate-rise">
       <p className="font-display text-lg font-bold">Sign the agreement</p>
       <p className="mt-2 rounded-2xl border border-line bg-card p-4 text-sm leading-relaxed">
-        I agree to work as <b>{role.title}</b> on <b>{project.name}</b> for <b>${role.pay} USDC</b>, paid by milestone,
-        under draft v{project.version}.
+        I agree to work as <b>{role.title}</b> on <b>{project.name}</b> for <b>${role.pay} USDC</b>:{' '}
+        <b>{role.depositPct}% up front</b>, the rest by milestone as set out in the payment plan, under draft v{project.version}.
       </p>
+      <PayoutPicker value={payout} onChange={setPayout} />
       <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">
         <input
           type="checkbox"
@@ -224,7 +242,7 @@ function SignPanel({ project, role, onCancel }: { project: Project; role: Role; 
           cancel.
         </span>
       </label>
-      <Button size="lg" className="mt-5 w-full" disabled={!understood || stage === 'signing'} onClick={sign}>
+      <Button size="lg" className="mt-5 w-full" disabled={!understood || !payoutReady || stage === 'signing'} onClick={sign}>
         {stage === 'signing' ? (
           <>
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" /> Signing…
@@ -247,13 +265,15 @@ function CounterPanel({
 }: {
   role: Role
   onCancel: () => void
-  onSend: (amount: number, note: string) => void
+  onSend: (amount: number, depositPct: number, note: string) => void
 }) {
   const [amount, setAmount] = useState(String(role.pay))
+  const [depositPct, setDepositPct] = useState(role.depositPct)
   const [note, setNote] = useState('')
   const value = Number(amount) || 0
   const diff = value - role.pay
-  const valid = value > 0 && value !== role.pay && note.trim().length >= 10
+  const changed = value !== role.pay || depositPct !== role.depositPct
+  const valid = value > 0 && changed && note.trim().length >= 10
 
   return (
     <div className="animate-rise space-y-4">
@@ -272,6 +292,25 @@ function CounterPanel({
         </div>
       </label>
       <label className="block">
+        <Label hint={`$${Math.round((value * depositPct) / 100).toLocaleString('en-US')} before work starts`}>
+          Up front: {depositPct}%
+        </Label>
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={5}
+          value={depositPct}
+          onChange={(e) => setDepositPct(Number(e.target.value))}
+          className="w-full accent-[#ff6a3d]"
+        />
+        <span className="mt-1 flex justify-between text-xs text-muted">
+          <span>0%</span>
+          <span>Offered: {role.depositPct}%</span>
+          <span>50%</span>
+        </span>
+      </label>
+      <label className="block">
         <Label>Why</Label>
         <TextArea
           rows={3}
@@ -280,7 +319,7 @@ function CounterPanel({
           placeholder="What you’re bringing, or what the brief underestimates."
         />
       </label>
-      <Button className="w-full" disabled={!valid} onClick={() => onSend(value, note.trim())}>
+      <Button className="w-full" disabled={!valid} onClick={() => onSend(value, depositPct, note.trim())}>
         Send to the Lead
       </Button>
       <button onClick={onCancel} className="w-full text-center text-sm text-muted hover:text-ink">
@@ -332,6 +371,65 @@ function Done({
       <Link to={`/p/${projectId}`} className="mt-4 inline-block text-sm font-medium underline underline-offset-4">
         Open project & chat
       </Link>
+    </div>
+  )
+}
+
+// How the collaborator wants to receive money. Recorded with their signature and shown to the Lead.
+function PayoutPicker({ value, onChange }: { value: PayoutPreference; onChange: (p: PayoutPreference) => void }) {
+  const bank = value.bank ?? { name: '', account: '', currency: 'NGN' }
+  const options = [
+    { method: 'wallet' as const, title: 'USDC to my wallet', sub: 'Instant, on Base' },
+    { method: 'bank' as const, title: 'My bank account', sub: 'Local currency · phase 2' },
+  ]
+  return (
+    <div className="mt-4">
+      <Label>How you want to be paid</Label>
+      <div className="grid grid-cols-2 gap-2">
+        {options.map((o) => (
+          <button
+            key={o.method}
+            onClick={() => onChange({ ...value, method: o.method, bank: o.method === 'bank' ? bank : value.bank })}
+            className={`rounded-2xl border p-3 text-left text-sm transition ${
+              value.method === o.method ? 'border-ink bg-card ring-4 ring-ink/5' : 'border-line hover:border-ink/40'
+            }`}
+          >
+            <span className="block font-medium">{o.title}</span>
+            <span className="text-xs text-muted">{o.sub}</span>
+          </button>
+        ))}
+      </div>
+      {value.method === 'wallet' ? (
+        <Input
+          className="mt-2 font-mono text-sm"
+          value={value.wallet ?? ''}
+          onChange={(e) => onChange({ ...value, wallet: e.target.value })}
+          placeholder="0x… (blank = the wallet you sign with)"
+        />
+      ) : (
+        <div className="mt-2 grid grid-cols-[1fr_1fr_80px] gap-2">
+          <Input value={bank.name} onChange={(e) => onChange({ ...value, bank: { ...bank, name: e.target.value } })} placeholder="Bank" />
+          <Input value={bank.account} onChange={(e) => onChange({ ...value, bank: { ...bank, account: e.target.value } })} placeholder="Account no." />
+          <select
+            value={bank.currency}
+            onChange={(e) => onChange({ ...value, bank: { ...bank, currency: e.target.value } })}
+            className="h-11 rounded-2xl border border-line bg-card px-3 text-sm"
+          >
+            {['NGN', 'GHS', 'KES', 'USD'].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      <Input
+        className="mt-2 text-sm"
+        value={value.note ?? ''}
+        onChange={(e) => onChange({ ...value, note: e.target.value })}
+        placeholder="Anything else? e.g. “Send the deposit to my studio account”"
+      />
+      {value.method === 'bank' && (
+        <p className="mt-2 text-xs text-muted">Bank payouts arrive through a licensed partner that converts USDC to your currency.</p>
+      )}
     </div>
   )
 }

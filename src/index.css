@@ -24,6 +24,10 @@ html {
   -webkit-font-smoothing: antialiased;
 }
 
+body {
+  background: var(--color-paper);
+}
+
 ::selection {
   background: var(--color-accent-soft);
 }

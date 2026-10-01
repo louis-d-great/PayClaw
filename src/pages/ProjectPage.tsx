@@ -3,9 +3,11 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import Chat from '../components/Chat'
 import { Avatar, Badge, Button, Card, Money } from '../components/ui'
 import { shortDate } from '../lib/format'
-import { projectStatus, roleStatus } from '../lib/status'
+import Schedule from '../components/Schedule'
+import { canReclaim, earnedBy, vault } from '../lib/rules'
+import { milestoneStatus, projectStatus, roleStatus } from '../lib/status'
 import { budget, personName, signedCount, useStore } from '../store'
-import type { Project, Role } from '../types'
+import { REVIEWER, type Project, type Role } from '../types'
 
 export default function ProjectPage() {
   const { projectId } = useParams()
@@ -57,25 +59,37 @@ export default function ProjectPage() {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
         <div className="space-y-6">
-          <SignatureGate project={project} signed={signed} isLead={isLead} onFund={() => dispatch({ type: 'fund', projectId: project.id })} />
+          {project.fundedAt ? (
+            <>
+              <VaultCard project={project} />
+              <Attention project={project} />
+              {project.roles.map((r) => (
+                <WorkCard key={r.id} project={project} role={r} />
+              ))}
+            </>
+          ) : (
+            <>
+              <SignatureGate project={project} signed={signed} isLead={isLead} onFund={() => dispatch({ type: 'fund', projectId: project.id })} />
 
-          {!isLead && myRole && project.status === 'signing' && (
-            <Link
-              to={`/p/${project.id}/role/${myRole.id}`}
-              className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-paper transition hover:bg-ink/90"
-            >
-              <span>
-                Your role: <b>{myRole.title}</b> · ${myRole.pay}
-              </span>
-              <span className="text-sm opacity-80">Review →</span>
-            </Link>
+              {!isLead && myRole && project.status === 'signing' && (
+                <Link
+                  to={`/p/${project.id}/role/${myRole.id}`}
+                  className="flex items-center justify-between rounded-2xl bg-ink px-5 py-4 text-paper transition hover:bg-ink/90"
+                >
+                  <span>
+                    Your role: <b>{myRole.title}</b> · ${myRole.pay}
+                  </span>
+                  <span className="text-sm opacity-80">Review →</span>
+                </Link>
+              )}
+
+              <Card className="divide-y divide-line">
+                {project.roles.map((r) => (
+                  <RoleRow key={r.id} project={project} role={r} isLead={isLead} />
+                ))}
+              </Card>
+            </>
           )}
-
-          <Card className="divide-y divide-line">
-            {project.roles.map((r) => (
-              <RoleRow key={r.id} project={project} role={r} isLead={isLead} />
-            ))}
-          </Card>
 
           <Card className="p-6">
             <h2 className="mb-2 font-display text-lg font-bold">The brief</h2>
@@ -86,7 +100,7 @@ export default function ProjectPage() {
         <Card className="flex h-[560px] flex-col overflow-hidden lg:sticky lg:top-24">
           <div className="border-b border-line px-5 py-4">
             <p className="font-display text-lg font-bold">Project chat</p>
-            <p className="text-xs text-muted">Counter-offers and every change to the draft are logged here.</p>
+            <p className="text-xs text-muted">The official record. Counter-offers, changes and payouts are logged here, and it’s the evidence in a dispute.</p>
           </div>
           <div className="min-h-0 flex-1">
             <Chat project={project} />
@@ -110,17 +124,6 @@ function SignatureGate({
 }) {
   const [funding, setFunding] = useState(false)
   const total = project.roles.length
-
-  if (project.status === 'funded')
-    return (
-      <Card className="flex items-center gap-4 p-6">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ok-soft text-xl text-ok">⬢</span>
-        <div>
-          <p className="font-display text-lg font-bold">Vault funded with ${budget(project).toLocaleString('en-US')} USDC</p>
-          <p className="text-sm text-muted">The terms are locked. Money is released as milestones are approved.</p>
-        </div>
-      </Card>
-    )
 
   return (
     <Card className="p-6">
@@ -202,5 +205,120 @@ function RoleRow({ project, role, isLead }: { project: Project; role: Role; isLe
         </div>
       )}
     </div>
+  )
+}
+
+function VaultCard({ project }: { project: Project }) {
+  const v = vault(project)
+  const pct = (n: number) => `${v.funded ? (n / v.funded) * 100 : 0}%`
+  return (
+    <Card className="p-6">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-ok-soft text-lg text-ok">⬢</span>
+        <div>
+          <p className="font-display text-lg font-bold">Project vault</p>
+          <p className="text-sm text-muted">Terms are locked. Money moves only by the rules everyone signed.</p>
+        </div>
+      </div>
+      <div className="mt-5 flex h-3 overflow-hidden rounded-full bg-ink/5">
+        <div className="h-full bg-ok transition-all duration-700" style={{ width: pct(v.paid) }} />
+        <div className="h-full bg-muted/40 transition-all duration-700" style={{ width: pct(v.returned) }} />
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {(
+          [
+            ['Funded', v.funded, 'text-ink'],
+            ['Paid out', v.paid, 'text-ok'],
+            ['Returned', v.returned, 'text-muted'],
+            ['Still in vault', v.held, 'text-ink'],
+          ] as const
+        ).map(([label, n, c]) => (
+          <div key={label}>
+            <dt className="text-xs text-muted">{label}</dt>
+            <dd className={`font-display text-xl font-bold tabular-nums ${c}`}>${n.toLocaleString('en-US')}</dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  )
+}
+
+// Everything waiting on the person viewing, so nobody has to hunt for it.
+function Attention({ project }: { project: Project }) {
+  const { me, now } = useStore()
+  const isLead = project.lead === me
+  const items: { to: string; text: string; tone: 'accent' | 'warn' }[] = []
+  for (const r of project.roles)
+    for (const m of r.milestones) {
+      const to = `/p/${project.id}/m/${r.id}/${m.id}`
+      if (isLead && m.status === 'submitted') items.push({ to, tone: 'accent', text: `Review “${m.title}” from ${personName(r.assignee!)}` })
+      if (isLead && canReclaim(m, now)) items.push({ to, tone: 'warn', text: `“${m.title}” is overdue with nothing submitted` })
+      if (r.assignee === me && m.status === 'working' && m.submissions.length > 0)
+        items.push({ to, tone: 'warn', text: `Changes requested on “${m.title}”` })
+      if (m.status === 'disputed' && (isLead || r.assignee === me || me === REVIEWER))
+        items.push({ to, tone: 'warn', text: me === REVIEWER ? `Rule on “${m.title}”` : `“${m.title}” is in dispute` })
+    }
+  if (items.length === 0) return null
+  return (
+    <Card className="border-accent/40 p-2">
+      <p className="px-4 pt-3 pb-1 text-xs font-medium uppercase tracking-wider text-accent">Needs you</p>
+      {items.map((it) => (
+        <Link key={it.text} to={it.to} className="flex items-center gap-3 rounded-2xl px-4 py-3 transition hover:bg-ink/[.03]">
+          <span className={`h-2 w-2 rounded-full ${it.tone === 'accent' ? 'bg-accent' : 'bg-warn'}`} />
+          <span className="text-sm font-medium">{it.text}</span>
+          <span className="ml-auto text-sm text-muted">Open →</span>
+        </Link>
+      ))}
+    </Card>
+  )
+}
+
+function WorkCard({ project, role }: { project: Project; role: Role }) {
+  const { me, now } = useStore()
+  const earned = earnedBy(project, role.id)
+  const active = role.milestones.find((m) => !['paid', 'resolved', 'reclaimed'].includes(m.status))
+  const payout =
+    role.payout?.method === 'bank'
+      ? `Bank · ${role.payout.bank?.name} ${role.payout.bank?.currency}`
+      : role.payout?.method === 'wallet'
+        ? 'USDC wallet'
+        : undefined
+  return (
+    <Card className="p-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <Avatar handle={role.assignee} size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">
+            {role.title}
+            {role.assignee === me && <span className="ml-2 text-xs font-medium text-accent">You</span>}
+          </p>
+          <p className="text-sm text-muted">
+            {role.assignee ? personName(role.assignee) : 'Open'}
+            {payout && ` · paid by ${payout}`}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted">Earned so far</p>
+          <p className="tabular-nums">
+            <b className="font-display text-lg">${earned.toLocaleString('en-US')}</b>
+            <span className="text-sm text-muted"> / ${role.pay.toLocaleString('en-US')}</span>
+          </p>
+        </div>
+      </div>
+      <div className="mt-4">
+        <Schedule project={project} role={role} linkMilestones />
+      </div>
+      {active && (
+        <Link
+          to={`/p/${project.id}/m/${role.id}/${active.id}`}
+          className="mt-1 flex items-center justify-between rounded-2xl bg-paper px-4 py-3 text-sm transition hover:bg-ink/[.05]"
+        >
+          <span>
+            Current: <b>{active.title}</b> · {milestoneStatus(project, active, now).label}
+          </span>
+          <span className="text-muted">Open →</span>
+        </Link>
+      )}
+    </Card>
   )
 }

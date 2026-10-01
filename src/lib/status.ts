@@ -1,7 +1,8 @@
 import { isSigned } from '../store'
-import type { Project, Role } from '../types'
+import type { Milestone, Project, Role } from '../types'
+import { isOverdue } from './rules'
 
-type Tone = 'neutral' | 'ok' | 'warn' | 'accent'
+export type Tone = 'neutral' | 'ok' | 'warn' | 'accent'
 
 export function roleStatus(p: Project, r: Role): { label: string; tone: Tone } {
   if (isSigned(p, r)) return { label: 'Signed', tone: 'ok' }
@@ -20,6 +21,26 @@ export function projectStatus(p: Project): { label: string; tone: Tone } {
     case 'funded':
       return { label: 'Funded · in progress', tone: 'ok' }
     case 'done':
-      return { label: 'Done', tone: 'ok' }
+      return { label: 'Complete', tone: 'ok' }
+  }
+}
+
+export function milestoneStatus(p: Project, m: Milestone, now: number): { label: string; tone: Tone } {
+  if (!p.fundedAt) return { label: 'Starts when funded', tone: 'neutral' }
+  switch (m.status) {
+    case 'paid':
+      return { label: 'Paid', tone: 'ok' }
+    case 'submitted':
+      return { label: 'Waiting for review', tone: 'accent' }
+    case 'disputed':
+      return { label: 'In dispute', tone: 'warn' }
+    case 'resolved':
+      return { label: 'Settled by review', tone: 'neutral' }
+    case 'reclaimed':
+      return { label: 'Returned to Lead', tone: 'neutral' }
+    case 'working':
+      if (m.submissions.length > 0) return { label: 'Changes requested', tone: 'warn' }
+      if (isOverdue(m, now)) return { label: 'Overdue', tone: 'warn' }
+      return { label: 'In progress', tone: 'neutral' }
   }
 }
