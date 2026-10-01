@@ -20,10 +20,7 @@ Groups who work and get paid together (music collabs, design duos, freelance tea
 ## State of the code
 
 - Front-end prototype (React 19, TypeScript, Tailwind v4, Vite, React Router). Wallets, vault and database are mocked; data lives in `localStorage`. "Viewing as" switches users; "Skip 7 days" moves the demo clock.
-- Branches on GitHub (`louis-d-great/PayClaw`), not all merged to `main`:
-  - `claude/app-complete`: latest app (milestones, disputes, chat with files/voice/DMs, applications, edit/cancel, profiles, `npm start`)
-  - `claude/vault-contract`: Solidity vault for Base with tests and CI
-  - `claude/backend-setup`: Supabase schema + security rules, Vercel config
+- `main` on GitHub (`louis-d-great/PayClaw`) has the full app (milestones, disputes, chat with files/voice/DMs, applications, edit/cancel, profiles, `npm start`), the Solidity vault for Base with tests and CI, and the Supabase schema + security rules and Vercel config.
 - Next: move storage/chat/files to Supabase (needs the user's project URL and public key), real sign-in + Coinbase Smart Wallet, EIP-712 signatures, wire the vault.
 
 ## Working here
