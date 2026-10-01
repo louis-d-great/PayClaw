@@ -10,6 +10,10 @@ export type FileRef = {
   // Previews can be opened any time. Finals stay locked until the milestone is paid,
   // so a Lead can't take the work without paying for it.
   kind: 'preview' | 'final'
+  mime?: string
+  // Small files are kept inline as a data URL in the prototype, so a preview beat or
+  // mockup can be played or viewed right on the milestone. Supabase Storage replaces this.
+  url?: string
 }
 
 export type Review = {

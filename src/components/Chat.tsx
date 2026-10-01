@@ -1,26 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { parties, personName, useStore, type Channel } from '../store'
 import { dmKey, type Attachment, type Handle, type Message, type Project } from '../types'
+import { mediaKind, readFile as readRaw, sizeLabel } from '../lib/files'
 import { Avatar, Badge, Button, cx } from './ui'
 
-// Files up to this size are kept inline in the prototype so they show after a reload.
-// Supabase Storage replaces this with real uploads.
-const INLINE_LIMIT = 1_500_000
-
-const kindOf = (mime: string): Attachment['kind'] =>
-  mime.startsWith('image/') ? 'image' : mime.startsWith('audio/') ? 'audio' : mime.startsWith('video/') ? 'video' : 'file'
-
-const readFile = (f: File | Blob, name: string): Promise<Attachment> =>
-  new Promise((resolve) => {
-    const base = { name, size: f.size, mime: f.type || 'application/octet-stream', kind: kindOf(f.type) }
-    if (f.size > INLINE_LIMIT) return resolve(base)
-    const r = new FileReader()
-    r.onload = () => resolve({ ...base, url: String(r.result) })
-    r.onerror = () => resolve(base)
-    r.readAsDataURL(f)
-  })
-
-const sizeLabel = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`)
+const readFile = async (f: File | Blob, name: string): Promise<Attachment> => {
+  const r = await readRaw(f, name)
+  return { ...r, kind: mediaKind(r.mime) }
+}
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
 function dayLabel(iso: string, now: number) {

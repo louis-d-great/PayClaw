@@ -18,6 +18,7 @@ import {
 } from '../lib/rules'
 import { milestoneStatus } from '../lib/status'
 import { personName, useStore } from '../store'
+import { mediaKind, readFile, sizeLabel } from '../lib/files'
 import { REVIEWER, type FileRef, type Milestone, type Project, type Role, type Submission } from '../types'
 
 export default function MilestonePage() {
@@ -178,9 +179,9 @@ function SubmissionItem({
         </div>
         <p className="mt-3 leading-relaxed">{sub.note}</p>
         {sub.files.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {sub.files.map((f) => (
-              <FileChip key={f.name} f={f} locked={f.kind === 'final' && m.status !== 'paid'} />
+          <div className="mt-4 space-y-2">
+            {sub.files.map((f, i) => (
+              <FileItem key={i} f={f} locked={f.kind === 'final' && m.status !== 'paid'} />
             ))}
           </div>
         )}
@@ -205,22 +206,33 @@ function SubmissionItem({
   )
 }
 
-const kb = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.round(n / 1000)} KB`)
-
-function FileChip({ f, locked }: { f: FileRef; locked: boolean }) {
+// Previews play or show right here so the Lead can judge the work against "Done when".
+// Finals stay locked until paid, then become a download.
+function FileItem({ f, locked }: { f: FileRef; locked: boolean }) {
+  const media = mediaKind(f.mime)
+  const open = !locked && f.url
   return (
-    <span
-      className={cx(
-        'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm',
-        locked ? 'border-dashed border-line text-muted' : 'border-line bg-paper',
-      )}
+    <div
+      className={cx('overflow-hidden rounded-xl border text-sm', locked ? 'border-dashed border-line text-muted' : 'border-line bg-paper')}
       title={locked ? 'Unlocks when this milestone is paid' : undefined}
     >
-      <span>{locked ? '🔒' : f.kind === 'final' ? '📦' : '👁'}</span>
-      <span className="max-w-[180px] truncate">{f.name}</span>
-      <span className="text-xs text-muted">{kb(f.size)}</span>
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{f.kind}</span>
-    </span>
+      {open && f.kind === 'preview' && media === 'audio' && <audio controls src={f.url} className="w-full px-2 pt-2" />}
+      {open && f.kind === 'preview' && media === 'video' && <video controls src={f.url} className="max-h-72 w-full bg-ink" />}
+      {open && f.kind === 'preview' && media === 'image' && <img src={f.url} alt={f.name} className="max-h-72 w-full object-contain" />}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span>{locked ? '🔒' : f.kind === 'final' ? '📦' : media === 'audio' ? '🎧' : '👁'}</span>
+        <span className="min-w-0 flex-1 truncate">{f.name}</span>
+        <span className="text-xs text-muted">{sizeLabel(f.size)}</span>
+        {open && f.kind === 'final' ? (
+          <a href={f.url} download={f.name} className="text-xs font-medium text-accent hover:underline">
+            Download
+          </a>
+        ) : (
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{f.kind}</span>
+        )}
+      </div>
+      {!f.url && !locked && <p className="px-3 pb-2 text-xs text-muted">Too large to keep in the demo. Saved when storage is connected.</p>}
+    </div>
   )
 }
 
@@ -471,24 +483,26 @@ function SubmitForm({
 function FilePicker({ files, setFiles }: { files: FileRef[]; setFiles: (f: FileRef[]) => void }) {
   const preview = useRef<HTMLInputElement>(null)
   const final = useRef<HTMLInputElement>(null)
-  // Prototype: we keep names and sizes only. Supabase Storage holds the real files later.
-  const add = (list: FileList | null, kind: FileRef['kind']) =>
-    list && setFiles([...files, ...[...list].map((f) => ({ name: f.name, size: f.size, kind }))])
+  const add = async (list: FileList | null, kind: FileRef['kind']) => {
+    if (!list) return
+    const read = await Promise.all([...list].map((f) => readFile(f, f.name)))
+    setFiles([...files, ...read.map((r) => ({ ...r, kind }))])
+  }
   return (
     <div>
       <Label hint="Finals unlock when you’re paid">Files</Label>
       <div className="grid grid-cols-2 gap-2">
         <button onClick={() => preview.current?.click()} className="rounded-2xl border border-dashed border-line p-3 text-left text-sm hover:border-ink/40">
           <span className="block font-medium">👁 Add preview</span>
-          <span className="text-xs text-muted">Lead can open now</span>
+          <span className="text-xs text-muted">Lead can play or view it now</span>
         </button>
         <button onClick={() => final.current?.click()} className="rounded-2xl border border-dashed border-line p-3 text-left text-sm hover:border-ink/40">
           <span className="block font-medium">🔒 Add final</span>
           <span className="text-xs text-muted">Locked until paid</span>
         </button>
       </div>
-      <input ref={preview} type="file" multiple hidden onChange={(e) => add(e.target.files, 'preview')} />
-      <input ref={final} type="file" multiple hidden onChange={(e) => add(e.target.files, 'final')} />
+      <input ref={preview} type="file" multiple hidden onChange={(e) => (add(e.target.files, 'preview'), (e.target.value = ''))} />
+      <input ref={final} type="file" multiple hidden onChange={(e) => (add(e.target.files, 'final'), (e.target.value = ''))} />
       {files.length > 0 && (
         <ul className="mt-2 space-y-1">
           {files.map((f, i) => (
