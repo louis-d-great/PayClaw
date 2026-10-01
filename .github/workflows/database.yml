@@ -1,0 +1,15 @@
+name: Database security tests
+
+on:
+  pull_request:
+    paths: ['supabase/**']
+  push:
+    branches: [main]
+    paths: ['supabase/**']
+
+jobs:
+  rls:
+    runs-on: ubuntu-24.04 # ships with PostgreSQL 16
+    steps:
+      - uses: actions/checkout@v4
+      - run: supabase/tests/run.sh
