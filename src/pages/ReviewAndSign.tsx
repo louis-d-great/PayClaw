@@ -114,7 +114,7 @@ function CrewRow({ project, role, highlight }: { project: Project; role: Role; h
 }
 
 function YourRole({ project, role, canAct }: { project: Project; role: Role; canAct: boolean }) {
-  const { dispatch, me } = useStore()
+  const { dispatch, me, profiles } = useStore()
   const [panel, setPanel] = useState<Panel>('none')
   const signed = isSigned(project, role)
   const openCounter = project.messages.find((m) => m.kind === 'counter' && m.roleId === role.id && !m.resolution)
@@ -163,6 +163,21 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
             body={`Waiting for ${personName(project.lead)} to reply. You can keep talking in the project chat.`}
             projectId={project.id}
           />
+        ) : !role.assignee && project.lead !== me && project.status === 'signing' ? (
+          role.applicants?.some((a) => a.handle === me) ? (
+            <Done
+              tone="accent"
+              title="Application sent"
+              body={`${personName(project.lead)} will review your portfolio. If they pick you, you’ll review and sign the same terms here.`}
+              projectId={project.id}
+            />
+          ) : (
+            <ApplyPanel
+              role={role}
+              portfolio={profiles[me]?.portfolio ?? ''}
+              onSend={(portfolio, note, amount) => dispatch({ type: 'apply', projectId: project.id, roleId: role.id, portfolio, note, amount })}
+            />
+          )
         ) : !canAct ? (
           <p className="text-center text-sm text-muted">Responses are only open to the invited person.</p>
         ) : panel === 'sign' ? (
@@ -430,6 +445,55 @@ function PayoutPicker({ value, onChange }: { value: PayoutPreference; onChange: 
       {value.method === 'bank' && (
         <p className="mt-2 text-xs text-muted">Bank payouts arrive through a licensed partner that converts USDC to your currency.</p>
       )}
+    </div>
+  )
+}
+
+// Open roles: anyone with the link applies with a portfolio; the Lead picks one person, who then signs.
+function ApplyPanel({
+  role,
+  portfolio: initialPortfolio,
+  onSend,
+}: {
+  role: Role
+  portfolio: string
+  onSend: (portfolio: string, note: string, amount?: number) => void
+}) {
+  const [portfolio, setPortfolio] = useState(initialPortfolio)
+  const [note, setNote] = useState('')
+  const [amount, setAmount] = useState(String(role.pay))
+  const value = Number(amount) || 0
+  const validUrl = /^https?:\/\/\S+\.\S+/.test(portfolio.trim())
+  return (
+    <div className="animate-rise space-y-4">
+      <div>
+        <p className="font-display text-lg font-bold">Apply for this role</p>
+        <p className="mt-1 text-sm text-muted">This role is open. Show your work, and the Lead picks who to invite.</p>
+      </div>
+      <label className="block">
+        <Label>Portfolio link</Label>
+        <Input id="apply-portfolio" value={portfolio} onChange={(e) => setPortfolio(e.target.value)} placeholder="https://your-work.com" />
+      </label>
+      <label className="block">
+        <Label>Why you</Label>
+        <TextArea id="apply-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Similar work you’ve done, and how you’d approach this." />
+      </label>
+      <label className="block">
+        <Label hint={value !== role.pay ? `Offer is $${role.pay}` : 'Same as the offer'}>Your price (USDC)</Label>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
+          <Input id="apply-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} className="pl-8 tabular-nums" />
+        </div>
+      </label>
+      <Button
+        size="lg"
+        variant="accent"
+        className="w-full"
+        disabled={!validUrl || note.trim().length < 10 || value <= 0}
+        onClick={() => onSend(portfolio.trim(), note.trim(), value !== role.pay ? value : undefined)}
+      >
+        Send application
+      </Button>
     </div>
   )
 }

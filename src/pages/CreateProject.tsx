@@ -45,13 +45,31 @@ const toHandle = (s: string) => {
 const payOf = (r: DraftRole) => Math.max(0, Number(r.pay) || 0)
 const pctSum = (r: DraftRole) => r.depositPct + r.milestones.reduce((s, m) => s + m.pct, 0)
 
-export default function CreateProject() {
+const fromProject = (p: Project): DraftRole[] =>
+  p.roles.map((r) => ({
+    id: r.id,
+    title: r.title,
+    assignee: r.assignee ?? '',
+    pay: String(r.pay),
+    depositPct: r.depositPct,
+    milestones: r.milestones.map((m) => ({
+      id: m.id,
+      title: m.title,
+      doneWhen: m.doneWhen,
+      due: m.due ?? '',
+      pct: m.pct,
+      revisions: m.revisions,
+    })),
+  }))
+
+// Creates a project, or edits one that's still collecting signatures (`editing`).
+export default function CreateProject({ editing }: { editing?: Project }) {
   const { me, dispatch } = useStore()
   const navigate = useNavigate()
-  const [name, setName] = useState('')
-  const [brief, setBrief] = useState('')
-  const [deadline, setDeadline] = useState('')
-  const [roles, setRoles] = useState<DraftRole[]>([newRole()])
+  const [name, setName] = useState(editing?.name ?? '')
+  const [brief, setBrief] = useState(editing?.brief ?? '')
+  const [deadline, setDeadline] = useState(editing?.deadline ?? '')
+  const [roles, setRoles] = useState<DraftRole[]>(() => (editing ? fromProject(editing) : [newRole()]))
 
   const total = roles.reduce((s, r) => s + payOf(r), 0)
   const deposits = roles.reduce((s, r) => s + Math.round((payOf(r) * r.depositPct) / 100), 0)
@@ -77,8 +95,37 @@ export default function CreateProject() {
   ]
   const ready = checks.every((c) => c.ok)
 
+  const toRoles = (): Project['roles'] =>
+    roles.map((r) => ({
+      id: r.id,
+      title: r.title.trim(),
+      assignee: toHandle(r.assignee),
+      pay: payOf(r),
+      depositPct: r.depositPct,
+      response: 'pending',
+      milestones: r.milestones.map((m) => ({
+        id: m.id,
+        title: m.title.trim(),
+        doneWhen: m.doneWhen.trim(),
+        due: m.due || undefined,
+        pct: m.pct,
+        revisions: m.revisions,
+        status: 'working',
+        submissions: [],
+      })),
+    }))
+
   const submit = () => {
     if (!ready) return
+    if (editing) {
+      dispatch({
+        type: 'editDraft',
+        projectId: editing.id,
+        draft: { name: name.trim(), brief: brief.trim(), deadline: deadline || undefined, roles: toRoles() },
+      })
+      navigate(`/p/${editing.id}`)
+      return
+    }
     const project: Project = {
       id: `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${uid().slice(0, 4)}`,
       name: name.trim(),
@@ -89,24 +136,8 @@ export default function CreateProject() {
       status: 'signing',
       createdAt: new Date().toISOString(),
       payouts: [],
-      roles: roles.map((r) => ({
-        id: r.id,
-        title: r.title.trim(),
-        assignee: toHandle(r.assignee),
-        pay: payOf(r),
-        depositPct: r.depositPct,
-        response: 'pending',
-        milestones: r.milestones.map((m) => ({
-          id: m.id,
-          title: m.title.trim(),
-          doneWhen: m.doneWhen.trim(),
-          due: m.due || undefined,
-          pct: m.pct,
-          revisions: m.revisions,
-          status: 'working',
-          submissions: [],
-        })),
-      })),
+      dms: {},
+      roles: toRoles(),
       messages: [
         {
           id: uid(),
@@ -124,10 +155,12 @@ export default function CreateProject() {
   return (
     <div className="animate-rise">
       <div className="mb-8 max-w-2xl">
-        <p className="mb-2 text-sm font-medium text-accent">New project</p>
-        <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Build your crew.</h1>
+        <p className="mb-2 text-sm font-medium text-accent">{editing ? `Editing draft v${editing.version}` : 'New project'}</p>
+        <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">{editing ? 'Update the deal.' : 'Build your crew.'}</h1>
         <p className="mt-3 text-lg text-muted">
-          Write the brief, set each role’s pay and payment plan, and send invites. Nothing is final until everyone signs.
+          {editing
+            ? 'Change anything below. Saving creates a new version, and everyone signs again. Clear “Who” to reopen a role.'
+            : 'Write the brief, set each role’s pay and payment plan, and send invites. Nothing is final until everyone signs.'}
         </p>
       </div>
 
@@ -233,7 +266,7 @@ export default function CreateProject() {
                 ))}
               </ul>
               <Button size="lg" variant="accent" className="w-full" disabled={!ready} onClick={submit}>
-                Send invites
+                {editing ? `Save as draft v${editing.version + 1}` : 'Send invites'}
               </Button>
               <p className="mt-3 text-center text-xs text-muted">
                 Collaborators can counter-offer on pay and deposit. Any change asks everyone to sign again.
