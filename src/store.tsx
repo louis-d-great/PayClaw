@@ -1073,6 +1073,8 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
           else if (a.type !== 'seen' && projectId) reload([projectId])
         })
         .catch((e: unknown) => {
+          // Read receipts can race a brand-new project; the next one catches up, so stay quiet.
+          if (a.type === 'seen') return
           setNotice(e instanceof Error ? e.message : String(e))
           if (projectId) reload([projectId])
         })

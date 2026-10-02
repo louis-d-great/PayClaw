@@ -151,6 +151,7 @@ begin
 end $$;
 
 drop function if exists public.decline_role(uuid);
+drop function if exists public.decline_role(uuid, text); -- so this file can be run again
 create function public.decline_role(p_role uuid, p_note text default '') returns void
   language plpgsql security definer set search_path = public as $$
 declare r roles;
