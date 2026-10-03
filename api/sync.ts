@@ -1,13 +1,19 @@
-// Mirrors a CrewPay vault transaction on Tempo into Supabase: funded status, milestone
-// status, payouts and a system message in the group chat. The chain is the source of truth;
-// this only records what the transaction's events say, once per event, so anyone can call it
-// and calling it twice changes nothing.
+// Mirrors a CrewPay vault transaction on Tempo into Supabase: project and milestone status,
+// payouts, submissions, reviews, disputes and a system message in the group chat. The chain is
+// the source of truth for money; this only records what the transaction's events say, once per
+// event, so calling it twice changes nothing.
 //
-// POST { projectId, txHash }
+// The words around an event (a submission's note and files, a change request, a dispute's
+// reason) aren't stored on-chain, so the caller sends them as `extra`. They're accepted only
+// when they match: a note must hash to what the vault recorded, and a dispute reason must come
+// from the signed-in person whose wallet opened it. Events that need words wait until they come.
+//
+// POST { projectId, txHash, extra? }   (Authorization: Bearer <Supabase access token> for disputes)
 // Env: SUPABASE_SERVICE_ROLE_KEY (server only), VITE_SUPABASE_URL, VITE_VAULT_ADDRESS.
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createPublicClient, http, keccak256, parseAbi, parseEventLogs, toBytes, type Address, type Hex } from 'viem'
 import { tempoModerato } from 'viem/chains'
+import { noteHash, workHash, type WorkFile } from '../src/lib/work.js'
 
 const events = parseAbi([
   'event Funded(bytes32 indexed projectId, address indexed lead, uint32 version, uint256 total, bytes32 termsDigest)',
@@ -25,45 +31,85 @@ const events = parseAbi([
 const dollars = (n: bigint) => Number(n) / 1_000_000
 const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 
-type Row = { id: string; position: number }
-type RoleRow = Row & { title: string; assignee_id: string | null; milestones: (Row & { title: string })[] }
+export type Extra = { note?: string; files?: WorkFile[]; reason?: string }
 
-export async function POST(request: Request) {
-  const { projectId, txHash } = (await request.json().catch(() => ({}))) as { projectId?: string; txHash?: string }
-  if (!projectId || !txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return Response.json({ error: 'Send projectId and txHash.' }, { status: 400 })
+type Row = { id: string; position: number }
+type MilestoneRow = Row & { title: string; revisions: number }
+type RoleRow = Row & { title: string; assignee_id: string | null; milestones: MilestoneRow[] }
+
+export function admin() {
   const url = process.env.VITE_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const vault = process.env.VITE_VAULT_ADDRESS as Address | undefined
-  if (!url || !key || !vault) return Response.json({ error: 'Server is missing SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL or VITE_VAULT_ADDRESS.' }, { status: 500 })
+  if (!url || !key) throw new Error('Server is missing SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL.')
+  return createClient(url, key, { auth: { persistSession: false } })
+}
 
-  const db = createClient(url, key, { auth: { persistSession: false } })
+/** The signed-in person behind a request, from their Supabase access token. */
+export async function caller(db: SupabaseClient, request: Request) {
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  if (!token) return undefined
+  const { data } = await db.auth.getUser(token)
+  if (!data.user) return undefined
+  const { data: profile } = await db.from('profiles').select('id, handle, wallet_address').eq('id', data.user.id).single()
+  return profile as { id: string; handle: string; wallet_address: string | null } | null
+}
+
+export async function syncTx(
+  db: SupabaseClient,
+  projectId: string,
+  txHash: Hex,
+  extra: Extra = {},
+  who?: { id: string; wallet_address: string | null } | null,
+  rulingNote?: string,
+) {
+  const vault = process.env.VITE_VAULT_ADDRESS as Address | undefined
+  if (!vault) throw new Error('Server is missing VITE_VAULT_ADDRESS.')
   const chain = createPublicClient({ chain: tempoModerato, transport: http() })
-  const receipt = await chain.getTransactionReceipt({ hash: txHash as Hex })
+  const receipt = await chain.getTransactionReceipt({ hash: txHash })
   const block = await chain.getBlock({ blockNumber: receipt.blockNumber })
   const at = new Date(Number(block.timestamp) * 1000).toISOString()
   const chainId = keccak256(toBytes(projectId))
   const logs = parseEventLogs({ abi: events, logs: receipt.logs.filter((l) => l.address.toLowerCase() === vault.toLowerCase()) }).filter(
     (l) => (l.args as { projectId: Hex }).projectId === chainId,
   )
-  if (logs.length === 0) return Response.json({ ok: true, events: 0 })
+  if (logs.length === 0) return { events: 0, waiting: 0 }
 
   const { data: project, error } = await db
     .from('projects')
-    .select('id, lead_id, roles(id, position, title, assignee_id, milestones(id, position, title))')
+    .select('id, lead_id, roles(id, position, title, assignee_id, milestones(id, position, title, revisions))')
     .eq('id', projectId)
     .single()
-  if (error || !project) return Response.json({ error: error?.message ?? 'No such project.' }, { status: 404 })
+  if (error || !project) throw new Error(error?.message ?? 'No such project.')
   const roles = ((project.roles ?? []) as RoleRow[]).sort((a, b) => a.position - b.position)
   const roleAt = (i: bigint) => roles[Number(i)]
   const milestoneAt = (r: bigint, m: bigint) => [...(roleAt(r)?.milestones ?? [])].sort((a, b) => a.position - b.position)[Number(m)]
   const ids = [project.lead_id, ...roles.map((r) => r.assignee_id)].filter(Boolean) as string[]
-  const { data: people } = await db.from('profiles').select('id, name').in('id', ids)
+  const { data: people } = await db.from('profiles').select('id, name, wallet_address').in('id', ids)
   const name = (id: string | null | undefined) => people?.find((p) => p.id === id)?.name ?? 'Someone'
+  const byWallet = (a: string) => people?.find((p) => p.wallet_address?.toLowerCase() === a.toLowerCase())?.id
+
+  const lastSubmission = async (milestoneId: string) =>
+    (await db.from('submissions').select('id').eq('milestone_id', milestoneId).order('created_at', { ascending: false }).limit(1)).data?.[0]
+      ?.id as string | undefined
 
   const messages: string[] = []
   const deposits: string[] = []
   let handled = 0
+  let waiting = 0
   for (const log of logs) {
+    // Events that need words wait until the right person sends matching ones.
+    let ready = true
+    if (log.eventName === 'WorkSubmitted')
+      ready = extra.note !== undefined && workHash(extra.note, extra.files ?? []) === log.args.workHash &&
+        (extra.files ?? []).every((f) => f.path.startsWith(`${projectId}/`))
+    if (log.eventName === 'ChangesRequested') ready = extra.note !== undefined && noteHash(extra.note) === log.args.noteHash
+    if (log.eventName === 'DisputeOpened')
+      ready = !!extra.reason?.trim() && !!who?.wallet_address && who.wallet_address.toLowerCase() === log.args.by.toLowerCase()
+    if (!ready) {
+      waiting++
+      continue
+    }
+
     // Record each event once; a second sync of the same transaction does nothing.
     const { error: seen } = await db
       .from('chain_events')
@@ -96,15 +142,41 @@ export async function POST(request: Request) {
         deposits.push(`${name(role?.assignee_id)} ${usd(dollars(log.args.amount))}`)
         break
       }
-      case 'WorkSubmitted':
+      case 'WorkSubmitted': {
+        const role = roleAt(log.args.role)
+        const m = milestoneAt(log.args.role, log.args.milestone)
+        const { count } = await db.from('submissions').select('id', { count: 'exact', head: true }).eq('milestone_id', m?.id ?? '')
+        await db.from('submissions').insert({
+          milestone_id: m?.id,
+          project_id: projectId,
+          author_id: role?.assignee_id,
+          note: extra.note,
+          files: extra.files ?? [],
+          created_at: at,
+        })
         await setMilestone(log.args.role, log.args.milestone, 'submitted')
+        const round = (count ?? 0) + 1
+        messages.push(
+          `${name(role?.assignee_id)} submitted “${m?.title}”${round > 1 ? ` (round ${round})` : ''}. ${name(project.lead_id)} has 7 days to review, then it pays automatically.`,
+        )
         break
-      case 'ChangesRequested':
+      }
+      case 'ChangesRequested': {
+        const m = milestoneAt(log.args.role, log.args.milestone)
+        const sub = await lastSubmission(m?.id ?? '')
+        if (sub) await db.from('submissions').update({ review_kind: 'changes', review_note: extra.note, reviewed_at: at }).eq('id', sub)
         await setMilestone(log.args.role, log.args.milestone, 'working')
+        const left = (m?.revisions ?? 0) - log.args.round
+        messages.push(
+          `${name(project.lead_id)} asked for changes on “${m?.title}”: “${extra.note}” (${left} revision round${left === 1 ? '' : 's'} left).`,
+        )
         break
+      }
       case 'MilestonePaid': {
         const role = roleAt(log.args.role)
         const m = milestoneAt(log.args.role, log.args.milestone)
+        const sub = await lastSubmission(m?.id ?? '')
+        if (sub) await db.from('submissions').update({ review_kind: log.args.automatic ? 'auto-approved' : 'approved', reviewed_at: at }).eq('id', sub)
         await setMilestone(log.args.role, log.args.milestone, 'paid')
         await pay(role, m?.id ?? null, role?.assignee_id ?? null, log.args.amount, log.args.automatic ? 'auto' : 'milestone')
         messages.push(
@@ -114,12 +186,22 @@ export async function POST(request: Request) {
         )
         break
       }
-      case 'DisputeOpened':
+      case 'DisputeOpened': {
+        const m = milestoneAt(log.args.role, log.args.milestone)
+        const opener = byWallet(log.args.by) ?? who!.id
+        await db.from('disputes').insert({ milestone_id: m?.id, project_id: projectId, opened_by: opener, reason: extra.reason, created_at: at })
+        await db.from('dispute_statements').insert({ milestone_id: m?.id, project_id: projectId, author_id: opener, text: extra.reason, created_at: at })
         await setMilestone(log.args.role, log.args.milestone, 'disputed')
+        messages.push(`${name(opener)} opened a dispute on “${m?.title}”. Both sides state their case, then CrewPay review rules.`)
         break
+      }
       case 'DisputeRuled': {
         const role = roleAt(log.args.role)
         const m = milestoneAt(log.args.role, log.args.milestone)
+        await db
+          .from('disputes')
+          .update({ ruling_bps: Number(log.args.collaboratorBps), ruling_note: rulingNote ?? '', ruled_at: at })
+          .eq('milestone_id', m?.id ?? '')
         await setMilestone(log.args.role, log.args.milestone, 'resolved')
         if (log.args.toCollaborator > 0n) await pay(role, m?.id ?? null, role?.assignee_id ?? null, log.args.toCollaborator, 'ruling')
         if (log.args.toLead > 0n) await pay(role, m?.id ?? null, project.lead_id, log.args.toLead, 'refund')
@@ -148,6 +230,20 @@ export async function POST(request: Request) {
   }
   if (deposits.length) messages.splice(1, 0, `Deposits paid: ${deposits.join(', ')}.`)
   if (messages.length)
-    await db.from('messages').insert(messages.map((text) => ({ project_id: projectId, author_id: null, kind: 'system', text })))
-  return Response.json({ ok: true, events: handled })
+    await db.from('messages').insert(messages.map((text) => ({ project_id: projectId, author_id: null, kind: 'system', text, created_at: at })))
+  return { events: handled, waiting }
+}
+
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => ({}))) as { projectId?: string; txHash?: string; extra?: Extra }
+  const { projectId, txHash } = body
+  if (!projectId || !txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) return Response.json({ error: 'Send projectId and txHash.' }, { status: 400 })
+  try {
+    const db = admin()
+    const who = body.extra?.reason ? await caller(db, request) : undefined
+    const result = await syncTx(db, projectId, txHash as Hex, body.extra ?? {}, who)
+    return Response.json({ ok: true, ...result })
+  } catch (e) {
+    return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 })
+  }
 }

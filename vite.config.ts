@@ -37,6 +37,7 @@ function vercelApi(): Plugin {
 
 export default defineConfig(({ mode }) => {
   // Server-only secrets (no VITE_ prefix) for the api/ functions in development.
-  Object.assign(process.env, loadEnv(mode, process.cwd(), ''))
+  // Values already set in the shell win, so a test run can override one.
+  for (const [k, v] of Object.entries(loadEnv(mode, process.cwd(), ''))) process.env[k] ??= v
   return { plugins: [react(), tailwindcss(), vercelApi()] }
 })

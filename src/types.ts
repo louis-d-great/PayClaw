@@ -14,6 +14,7 @@ export type FileRef = {
   // Small files are kept inline as a data URL in the prototype, so a preview beat or
   // mockup can be played or viewed right on the milestone. Supabase Storage replaces this.
   url?: string
+  blob?: Blob // live: the picked file, uploaded when the work is submitted
 }
 
 export type Review = {

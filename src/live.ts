@@ -428,6 +428,7 @@ export const LIVE_ACTIONS = new Set<Action['type']>([
   'say',
   'seen',
   'updateProfile',
+  'statement',
 ])
 
 const draftJson = (d: Pick<Project, 'name' | 'brief' | 'deadline' | 'roles'>) => ({
@@ -524,6 +525,11 @@ export async function perform(a: Action, ctx: { meId: string; people: People; pr
           .from('message_reads')
           .upsert({ project_id: a.projectId, channel: other ? idOf(other) : 'group', user_id: ctx.meId, seen_at: new Date().toISOString() }),
       )
+      return
+    }
+    case 'statement': {
+      // Off-chain: each side's account of a dispute, for the reviewer to read.
+      await check(sb().from('dispute_statements').insert({ milestone_id: a.milestoneId, project_id: a.projectId, author_id: ctx.meId, text: a.text }))
       return
     }
     case 'updateProfile':

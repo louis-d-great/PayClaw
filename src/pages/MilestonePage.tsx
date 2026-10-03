@@ -250,7 +250,7 @@ function Countdown({ to, now }: { to: number; now: number }) {
 }
 
 function ActionPanel({ project, role, m, amount }: { project: Project; role: Role; m: Milestone; amount: number }) {
-  const { me, now, dispatch } = useStore()
+  const { me, now, dispatch, mode, busy } = useStore()
   const isLead = me === project.lead
   const isCollab = me === role.assignee
   const target = { projectId: project.id, roleId: role.id, milestoneId: m.id }
@@ -290,6 +290,18 @@ function ActionPanel({ project, role, m, amount }: { project: Project; role: Rol
         <p className="mt-1 text-xs text-muted">If {personName(project.lead)} doesn’t respond, the vault pays {personName(role.assignee!)} automatically.</p>
       </div>
     )
+    // Live: the vault doesn't act on its own; once 7 days pass, anyone can release the payment.
+    if (mode === 'live' && auto <= now && (isCollab || isLead))
+      return (
+        <div>
+          <p className="text-sm leading-relaxed">
+            {personName(project.lead)} didn’t respond within 7 days, so this payment can be released now, exactly as everyone agreed.
+          </p>
+          <Button variant="accent" className="mt-4 w-full" disabled={!!busy} onClick={() => dispatch({ type: 'release', ...target })}>
+            Release ${amount.toLocaleString('en-US')} to {personName(role.assignee!)}
+          </Button>
+        </div>
+      )
     if (!isLead)
       return (
         <>
@@ -486,7 +498,7 @@ function FilePicker({ files, setFiles }: { files: FileRef[]; setFiles: (f: FileR
   const add = async (list: FileList | null, kind: FileRef['kind']) => {
     if (!list) return
     const read = await Promise.all([...list].map((f) => readFile(f, f.name)))
-    setFiles([...files, ...read.map((r) => ({ ...r, kind }))])
+    setFiles([...files, ...read.map((r, i) => ({ ...r, kind, blob: list[i] }))])
   }
   return (
     <div>

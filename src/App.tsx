@@ -8,6 +8,7 @@ import ProfilePage from './pages/ProfilePage'
 import ReceiptPage from './pages/ReceiptPage'
 import ProjectPage from './pages/ProjectPage'
 import ReviewAndSign from './pages/ReviewAndSign'
+import ReviewPage from './pages/ReviewPage'
 import { StoreProvider } from './store'
 
 // Hosted previews run in a sandboxed frame without real URLs, so they route in memory.
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="p/:projectId/edit" element={<EditProject />} />
             <Route path="u/:handle" element={<ProfilePage />} />
             <Route path="r/:projectId" element={<ReceiptPage />} />
+            <Route path="review" element={<ReviewPage />} />
           </Route>
         </Routes>
       </StoreProvider>

@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js'
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
 import { LIVE_ACTIONS, People, fetchInvite, fetchProfiles, fetchProjects, perform } from './live'
 import { supabase } from './lib/supabase'
+import { BUSY_TEXT, CHAIN_ACTIONS, performChain } from './liveWork'
 import { Onboarding, SignIn, Splash } from './pages/Auth'
 import { uid } from './lib/format'
 import {
@@ -79,6 +80,8 @@ export type Action =
   | ({ type: 'statement'; text: string } & Target)
   | ({ type: 'rule'; collaboratorPct: number; note: string } & Target)
   | ({ type: 'reclaim' } & Target)
+  // Live: anyone can release a submission the Lead left unanswered for 7 days.
+  | ({ type: 'release' } & Target)
   | { type: 'advance'; days: number }
   | { type: 'reset' }
 
@@ -858,6 +861,8 @@ type Store = State & {
   mode: Mode
   setMode: (m: Mode) => void
   notice: string
+  // Live: a vault transaction in progress ("Submitting your work on Tempo…").
+  busy: string
   clearNotice: () => void
   signOut: () => void
   // Live: fetch a project you were sent a link to but aren't on yet. Demo: nothing to fetch.
@@ -932,6 +937,7 @@ function DemoProvider({ children, setMode }: { children: ReactNode; setMode: (m:
     mode: 'demo',
     setMode,
     notice: '',
+    busy: '',
     clearNotice: () => {},
     signOut: () => {},
     loadProject: async () => {},
@@ -959,13 +965,21 @@ function LiveProvider({ children, setMode }: { children: ReactNode; setMode: (m:
 
 type LiveState = { me: Handle; projects: Project[]; profiles: Record<Handle, Profile>; seen: Record<string, string> }
 
-const NOT_LIVE = 'Funding, milestone work and disputes go live with the vault. Try them in the demo for now.'
+const NOT_LIVE = 'Cancelling a funded project goes live soon. Try it in the demo for now.'
+
+// Wallet and chain errors are long and technical; keep the first useful sentence.
+const friendly = (e: unknown) => {
+  const m = e instanceof Error ? e.message : String(e)
+  if (/NotAllowedError|cancel|denied|abort/i.test(m)) return 'The passkey prompt was closed, so nothing happened.'
+  return m.split('\n')[0].slice(0, 220)
+}
 
 function LiveSession({ userId, children, setMode }: { userId: string; children: ReactNode; setMode: (m: Mode) => void }) {
   const [people] = useState(() => new People())
   const [state, setState] = useState<LiveState | undefined>()
   const [needsProfile, setNeedsProfile] = useState(false)
   const [notice, setNotice] = useState('')
+  const [busy, setBusy] = useState('')
   const [failed, setFailed] = useState('')
   const latest = useRef(state)
   useEffect(() => {
@@ -1063,9 +1077,21 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
     (a: Action) => {
       const s = latest.current
       if (!s) return
-      if (!LIVE_ACTIONS.has(a.type)) return setNotice(NOT_LIVE)
       const projectId = a.type === 'create' ? a.project.id : 'projectId' in a ? a.projectId : undefined
       const project = s.projects.find((p) => p.id === projectId)
+      // Money moves on the vault, so these wait for Tempo instead of showing the change early.
+      if (CHAIN_ACTIONS.has(a.type) && project) {
+        setBusy(BUSY_TEXT[a.type] ?? 'Working on Tempo…')
+        performChain(a, project, s.profiles[s.me]?.wallet as `0x${string}` | undefined)
+          .then(() => reload([project.id]))
+          .catch((e: unknown) => {
+            setNotice(friendly(e))
+            reload([project.id])
+          })
+          .finally(() => setBusy(''))
+        return
+      }
+      if (!LIVE_ACTIONS.has(a.type)) return setNotice(NOT_LIVE)
       // Show the change straight away; the database's version replaces it a moment later.
       publish((cur) => {
         const next = reducer({ ...cur, clockOffset: 0 }, a)
@@ -1108,6 +1134,7 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
     mode: 'live',
     setMode,
     notice,
+    busy,
     clearNotice,
     signOut: () => supabase!.auth.signOut(),
     loadProject,
