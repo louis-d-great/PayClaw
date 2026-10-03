@@ -36,7 +36,7 @@ import {
 } from './types'
 
 // Front-end-only store for the MVP prototype. Everything lives in
-// localStorage; Supabase (drafts, chat, files) and the Base vault replace it later.
+// localStorage; Supabase (drafts, chat, files) and the vault on Tempo replace it later.
 
 export const PEOPLE: Handle[] = ['@louis', '@tobi', '@ada', '@kemi', '@zara', REVIEWER]
 
@@ -58,7 +58,7 @@ type Target = { projectId: string; roleId: string; milestoneId: string }
 export type Action =
   | { type: 'switchUser'; me: Handle }
   | { type: 'create'; project: Project }
-  | { type: 'accept'; projectId: string; roleId: string; payout: PayoutPreference }
+  | { type: 'accept'; projectId: string; roleId: string; payout: PayoutPreference; signature?: string }
   | { type: 'counter'; projectId: string; roleId: string; amount: number; depositPct: number; note: string }
   | { type: 'decline'; projectId: string; roleId: string; note: string }
   | { type: 'resolveCounter'; projectId: string; messageId: string; accept: boolean }
@@ -401,7 +401,7 @@ export function seed(): State {
     { id: uid(), at: ago(8), roleId: 'o-design', milestoneId: 'o1', to: '@ada', amount: amountFor(oja.roles[0], 'o1'), kind: 'milestone' },
   ]
   oja.messages = [
-    msg({ author: 'system', kind: 'system', text: 'Everyone signed. Louis funded the vault with $1,800 USDC.', at: ago(28) }),
+    msg({ author: 'system', kind: 'system', text: 'Everyone signed. Louis funded the vault with $1,800.', at: ago(28) }),
     msg({ author: 'system', kind: 'system', text: 'Deposits paid: Ada $140, Tobi $180, Kemi $40.', at: ago(28) }),
     msg({
       author: '@tobi',
@@ -513,7 +513,7 @@ function reduceProject(p: Project, a: Action, c: Ctx): Project {
           ? { ...r, assignee: r.assignee ?? c.me, response: 'accepted' as const, signedVersion: p.version, payout: a.payout }
           : r,
       )
-      const how = a.payout.method === 'wallet' ? 'USDC to their wallet' : `bank transfer in ${a.payout.bank?.currency}`
+      const how = a.payout.method === 'wallet' ? 'dollars to their CrewPay wallet' : `bank transfer in ${a.payout.bank?.currency}`
       return withStatus({
         ...p,
         roles,
@@ -700,7 +700,7 @@ function reduceProject(p: Project, a: Action, c: Ctx): Project {
         payouts: [...p.payouts, ...deposits.map(({ r, amount }) => pay(c, r, 'deposit', r.assignee!, amount, 'deposit'))],
         messages: [
           ...p.messages,
-          sys(c, `${name(p.lead)} funded the vault with ${money(budget(p))} USDC. Work can start.`),
+          sys(c, `${name(p.lead)} funded the vault with ${money(budget(p))}. Work can start.`),
           ...(deposits.length
             ? [sys(c, `Deposits paid: ${deposits.map(({ r, amount }) => `${name(r.assignee!)} ${money(amount)}`).join(', ')}.`)]
             : []),
@@ -862,6 +862,9 @@ type Store = State & {
   signOut: () => void
   // Live: fetch a project you were sent a link to but aren't on yet. Demo: nothing to fetch.
   loadProject: (id: string) => Promise<void>
+  // Live: the signed-in account's id, and a way to reload after changes made outside the store.
+  userId?: string
+  refresh: (projectId?: string) => Promise<void>
 }
 
 const StoreCtx = createContext<Store | null>(null)
@@ -932,6 +935,7 @@ function DemoProvider({ children, setMode }: { children: ReactNode; setMode: (m:
     clearNotice: () => {},
     signOut: () => {},
     loadProject: async () => {},
+    refresh: async () => {},
   }
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
 }
@@ -1089,6 +1093,7 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
     [reload],
   )
 
+  const refresh = useCallback(async (projectId?: string) => (projectId ? reload([projectId]) : loadAll()), [loadAll, reload])
   const clearNotice = useCallback(() => setNotice(''), [])
   const now = useWallClock()
   if (needsProfile) return <Onboarding userId={userId} onDone={loadAll} />
@@ -1106,6 +1111,8 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
     clearNotice,
     signOut: () => supabase!.auth.signOut(),
     loadProject,
+    userId,
+    refresh,
   }
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
 }

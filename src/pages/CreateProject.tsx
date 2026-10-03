@@ -323,7 +323,7 @@ function RoleEditor({
           <Input value={r.assignee} onChange={(e) => update({ assignee: e.target.value })} placeholder="@handle" />
         </label>
         <label className="block">
-          <Label>Pay (USDC)</Label>
+          <Label>Pay (USD)</Label>
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
             <Input

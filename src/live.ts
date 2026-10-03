@@ -22,7 +22,15 @@ const sb = () => supabase!
 
 // ---------- rows ----------
 
-export type ProfileRow = { id: string; handle: string; name: string; bio: string; skills: string[]; portfolio: string | null }
+export type ProfileRow = {
+  id: string
+  handle: string
+  name: string
+  bio: string
+  skills: string[]
+  portfolio: string | null
+  wallet_address?: string | null
+}
 type FileRow = { name: string; size: number; mime?: string; kind: string; path: string }
 type MessageRow = {
   id: string
@@ -141,7 +149,14 @@ export class People {
   profiles(): Record<Handle, Profile> {
     const out: Record<Handle, Profile> = {}
     for (const p of this.byId.values())
-      out[`@${p.handle}`] = { handle: `@${p.handle}`, name: p.name, bio: p.bio, skills: p.skills, portfolio: opt(p.portfolio) }
+      out[`@${p.handle}`] = {
+        handle: `@${p.handle}`,
+        name: p.name,
+        bio: p.bio,
+        skills: p.skills,
+        portfolio: opt(p.portfolio),
+        wallet: p.wallet_address ?? undefined,
+      }
     return out
   }
 }
@@ -464,11 +479,11 @@ export async function perform(a: Action, ctx: { meId: string; people: People; pr
       await rpc('cancel_draft', { pid: a.projectId, p_reason: a.reason })
       return
     case 'accept':
-      // Placeholder until wallets sign the terms (EIP-712) for the vault.
+      // Live with wallets: the Tempo transaction where they agreed to the terms (tempo:<hash>).
       await rpc('sign_role', {
         p_role: a.roleId,
         p_version: ctx.project?.version,
-        p_signature: `unsigned:v${ctx.project?.version}`,
+        p_signature: a.signature ?? `unsigned:v${ctx.project?.version}`,
         p_payout: a.payout,
       })
       return

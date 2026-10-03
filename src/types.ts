@@ -66,7 +66,7 @@ export type PayoutMethod = 'wallet' | 'bank'
 
 export type PayoutPreference = {
   method: PayoutMethod
-  wallet?: string // 0x… address for USDC on Base
+  wallet?: string // 0x… address on Tempo
   bank?: { name: string; account: string; currency: string } // phase 2, through an offramp
   note?: string
 }
@@ -85,7 +85,7 @@ export type Role = {
   id: string
   title: string // free text, e.g. "Mix engineer"
   assignee?: Handle // empty = open role, anyone with the link can respond
-  pay: number // fixed amount in USDC
+  pay: number // fixed amount in US dollars (a dollar stablecoin on Tempo)
   depositPct: number // paid first, the moment the vault is funded
   milestones: Milestone[]
   response: RoleResponse
@@ -151,6 +151,7 @@ export type Profile = {
   bio: string
   skills: string[]
   portfolio?: string
+  wallet?: string // live: their CrewPay wallet (a passkey account) on Tempo
 }
 
 export type Project = {

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Badge, Card, Money, cx } from '../components/ui'
+import { WalletCard } from '../components/Wallet'
 import { shortDate } from '../lib/format'
 import { projectStatus, roleStatus } from '../lib/status'
 import { budget, isSigned, personName, signedCount, useStore } from '../store'
@@ -31,6 +32,8 @@ export default function Dashboard() {
         <p className="mb-2 text-sm font-medium text-accent">Hi {personName(me)}</p>
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Your projects</h1>
       </div>
+
+      <WalletCard />
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
         <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />

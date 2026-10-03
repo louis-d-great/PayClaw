@@ -110,7 +110,7 @@ select pg_temp.act_as('10000000-0000-0000-0000-00000000000b');
 select pg_temp.refused($$select sign_role('30000000-0000-0000-0000-000000000001', 1, 'sig', '{"method":"wallet"}')$$, 'signing an old version');
 select sign_role('30000000-0000-0000-0000-000000000001', 2, 'sig', '{"method":"wallet","wallet":"0x0000000000000000000000000000000000000001"}');
 select pg_temp.check((select signed_version from roles where id = '30000000-0000-0000-0000-000000000001') = 2, 'signed on v2');
-select pg_temp.check(exists (select 1 from messages where text = 'Ada accepted and signed Cover art for $550, paid by USDC to their wallet.'), 'signing is logged');
+select pg_temp.check(exists (select 1 from messages where text = 'Ada accepted and signed Cover art for $550, paid in dollars to their CrewPay wallet.'), 'signing is logged');
 
 -- ---------------------------------------------------------------- open roles
 

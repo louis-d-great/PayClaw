@@ -6,6 +6,8 @@ import Schedule from '../components/Schedule'
 import { shortDate } from '../lib/format'
 import { amountFor } from '../lib/rules'
 import { roleStatus } from '../lib/status'
+import { CreateWalletButton, friendlyError } from '../components/Wallet'
+import { agree, shortAddress, termsBlocker, termsFor, txUrl, walletsEnabled } from '../lib/tempo'
 import { isSigned, personName, useStore } from '../store'
 import type { PayoutPreference, Project, Role } from '../types'
 
@@ -232,7 +234,14 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
 }
 
 function SignPanel({ project, role, onCancel }: { project: Project; role: Role; onCancel: () => void }) {
-  const { dispatch } = useStore()
+  const { dispatch, mode, me, profiles } = useStore()
+  // Live: the collaborator agrees to the exact terms on Tempo with their passkey wallet.
+  const live = mode === 'live' && walletsEnabled
+  const myWallet = profiles[me]?.wallet as `0x${string}` | undefined
+  const wallets = Object.fromEntries(Object.entries(profiles).map(([h, p]) => [h, p.wallet]))
+  const blocker = live && myWallet ? termsBlocker(project, wallets, personName) : undefined
+  const [error, setError] = useState('')
+  const [tx, setTx] = useState('')
   const [understood, setUnderstood] = useState(false)
   const [stage, setStage] = useState<'confirm' | 'signing'>('confirm')
   const [payout, setPayout] = useState<PayoutPreference>(role.payout ?? { method: 'wallet' })
@@ -241,21 +250,34 @@ function SignPanel({ project, role, onCancel }: { project: Project; role: Role; 
       ? true // the wallet they sign with receives the money unless they paste another address
       : !!payout.bank?.name.trim() && !!payout.bank?.account.trim()
 
-  const sign = () => {
+  const sign = async () => {
     setStage('signing')
-    // Stand-in for the wallet signature. On Base this becomes a typed-data signature
-    // over (projectId, version, roleId, pay, depositPct, milestones), so nobody can reuse it for another draft.
-    setTimeout(() => dispatch({ type: 'accept', projectId: project.id, roleId: role.id, payout }), 900)
+    setError('')
+    if (!live) {
+      // Demo: a stand-in for agreeing on Tempo.
+      setTimeout(() => dispatch({ type: 'accept', projectId: project.id, roleId: role.id, payout }), 900)
+      return
+    }
+    try {
+      // The terms name every person's wallet, the draft version and every role's pay,
+      // so this agreement can't be reused for any other draft.
+      const hash = await agree(myWallet!, termsFor(project, wallets))
+      setTx(hash)
+      dispatch({ type: 'accept', projectId: project.id, roleId: role.id, payout: { ...payout, wallet: myWallet }, signature: `tempo:${hash}` })
+    } catch (e) {
+      setError(friendlyError(e))
+      setStage('confirm')
+    }
   }
 
   return (
     <div className="animate-rise">
       <p className="font-display text-lg font-bold">Sign the agreement</p>
       <p className="mt-2 rounded-2xl border border-line bg-card p-4 text-sm leading-relaxed">
-        I agree to work as <b>{role.title}</b> on <b>{project.name}</b> for <b>${role.pay} USDC</b>:{' '}
+        I agree to work as <b>{role.title}</b> on <b>{project.name}</b> for <b>${role.pay}</b>:{' '}
         <b>{role.depositPct}% up front</b>, the rest by milestone as set out in the payment plan, under draft v{project.version}.
       </p>
-      <PayoutPicker value={payout} onChange={setPayout} />
+      <PayoutPicker value={payout} onChange={setPayout} wallet={live ? myWallet : undefined} />
       <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm">
         <input
           type="checkbox"
@@ -268,15 +290,35 @@ function SignPanel({ project, role, onCancel }: { project: Project; role: Role; 
           cancel.
         </span>
       </label>
-      <Button size="lg" className="mt-5 w-full" disabled={!understood || !payoutReady || stage === 'signing'} onClick={sign}>
-        {stage === 'signing' ? (
-          <>
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" /> Signing…
-          </>
-        ) : (
-          'Connect wallet & sign'
-        )}
-      </Button>
+      {live && !myWallet ? (
+        <div className="mt-5 rounded-2xl bg-accent-soft/60 p-4">
+          <p className="mb-3 text-sm">
+            You sign with your CrewPay wallet. Create it now with a passkey: Face ID, your fingerprint, your Windows PIN or your phone.
+          </p>
+          <CreateWalletButton label="Create my wallet" />
+        </div>
+      ) : blocker ? (
+        <p className="mt-5 rounded-2xl bg-warn-soft p-4 text-sm text-warn">{blocker}</p>
+      ) : (
+        <Button size="lg" className="mt-5 w-full" disabled={!understood || !payoutReady || stage === 'signing'} onClick={sign}>
+          {stage === 'signing' ? (
+            <>
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-paper/30 border-t-paper" /> {live ? 'Confirm with your passkey…' : 'Signing…'}
+            </>
+          ) : live ? (
+            'Sign with my passkey'
+          ) : (
+            'Connect wallet & sign'
+          )}
+        </Button>
+      )}
+      {error && <p className="mt-3 text-sm text-warn">{error}</p>}
+      {tx && (
+        <a href={txUrl(tx)} target="_blank" rel="noreferrer" className="mt-3 block text-center text-xs text-muted underline">
+          Agreed on Tempo ↗
+        </a>
+      )}
+      {live && myWallet && <p className="mt-3 text-center text-xs text-muted">Paid to your CrewPay wallet {shortAddress(myWallet)}. CrewPay covers the network fee.</p>}
       <button onClick={onCancel} className="mt-3 w-full text-center text-sm text-muted hover:text-ink">
         Back
       </button>
@@ -305,7 +347,7 @@ function CounterPanel({
     <div className="animate-rise space-y-4">
       <p className="font-display text-lg font-bold">Make a counter-offer</p>
       <label className="block">
-        <Label hint={diff !== 0 ? `${diff > 0 ? '+' : '−'}$${Math.abs(diff)} vs. offer` : undefined}>Your price (USDC)</Label>
+        <Label hint={diff !== 0 ? `${diff > 0 ? '+' : '−'}$${Math.abs(diff)} vs. offer` : undefined}>Your price (USD)</Label>
         <div className="relative">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
           <Input
@@ -402,10 +444,10 @@ function Done({
 }
 
 // How the collaborator wants to receive money. Recorded with their signature and shown to the Lead.
-function PayoutPicker({ value, onChange }: { value: PayoutPreference; onChange: (p: PayoutPreference) => void }) {
+function PayoutPicker({ value, onChange, wallet }: { value: PayoutPreference; onChange: (p: PayoutPreference) => void; wallet?: string }) {
   const bank = value.bank ?? { name: '', account: '', currency: 'NGN' }
   const options = [
-    { method: 'wallet' as const, title: 'USDC to my wallet', sub: 'Instant, on Base' },
+    { method: 'wallet' as const, title: 'My CrewPay wallet', sub: 'Instant, in digital dollars' },
     { method: 'bank' as const, title: 'My bank account', sub: 'Local currency · phase 2' },
   ]
   return (
@@ -425,7 +467,9 @@ function PayoutPicker({ value, onChange }: { value: PayoutPreference; onChange: 
           </button>
         ))}
       </div>
-      {value.method === 'wallet' ? (
+      {value.method === 'wallet' && wallet ? (
+        <p className="mt-2 rounded-2xl bg-ink/5 px-4 py-3 text-sm text-muted">Your pay lands in your CrewPay wallet, ready to withdraw.</p>
+      ) : value.method === 'wallet' ? (
         <Input
           className="mt-2 font-mono text-sm"
           value={value.wallet ?? ''}
@@ -454,7 +498,7 @@ function PayoutPicker({ value, onChange }: { value: PayoutPreference; onChange: 
         placeholder="Anything else? e.g. “Send the deposit to my studio account”"
       />
       {value.method === 'bank' && (
-        <p className="mt-2 text-xs text-muted">Bank payouts arrive through a licensed partner that converts USDC to your currency.</p>
+        <p className="mt-2 text-xs text-muted">Bank payouts arrive through a licensed partner that converts digital dollars to your currency.</p>
       )}
     </div>
   )
@@ -490,7 +534,7 @@ function ApplyPanel({
         <TextArea id="apply-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Similar work you’ve done, and how you’d approach this." />
       </label>
       <label className="block">
-        <Label hint={value !== role.pay ? `Offer is $${role.pay}` : 'Same as the offer'}>Your price (USDC)</Label>
+        <Label hint={value !== role.pay ? `Offer is $${role.pay}` : 'Same as the offer'}>Your price (USD)</Label>
         <div className="relative">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
           <Input id="apply-amount" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} className="pl-8 tabular-nums" />
