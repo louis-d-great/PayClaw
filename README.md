@@ -1,20 +1,58 @@
 # CrewPay
 
-**Build your crew, agree on pay, get paid.**
+**Your crew agrees on pay before the work starts, and everyone gets paid on Tempo as the work gets done.**
 
-CrewPay is for any group that works together and gets paid together: freelance teams, music collabs, design duos, small shops. The Lead writes the brief and sets each role's pay, upfront deposit and milestones. Collaborators accept, counter-offer (on pay and deposit), or decline, and say how they want to be paid. Nothing is final until everyone signs. Then the Lead funds a vault on Base: deposits go out first, and the rest is paid milestone by milestone.
+Live app: **https://payclaw-six.vercel.app** · Vault on Tempo testnet: [`0xCEb2…Ac2A`](https://explore.testnet.tempo.xyz/address/0xCEb2e939DE06360eB2fE68e07A2589059d9CAc2A) · Built for the Colosseum Crypto World's Fair, **Tempo track**
 
-This repo is the **front-end prototype**. Wallets, the vault and the database are mocked, so the whole flow can be clicked through today.
+## The problem
 
-| Create project | Review & sign |
-| --- | --- |
-| ![Create](docs/screens/create.png) | ![Sign](docs/screens/sign.png) |
-| **Milestone review** | **Dispute** |
-| ![Milestone](docs/screens/milestone.png) | ![Dispute](docs/screens/dispute.png) |
+Music collabs, design duos, freelance crews and small shops work together on a handshake. The producer delivers the beat and waits weeks to get paid. The Lead pays a deposit and the designer disappears. Nobody wrote down what "done" means, so every disagreement turns into an argument. Escrow tools exist for one buyer and one seller, not for a whole crew.
 
-## Run it on your computer
+## What CrewPay does
 
-You need [Git](https://git-scm.com/downloads), [Node.js](https://nodejs.org) (the LTS version) and an editor such as [VS Code](https://code.visualstudio.com).
+1. **The Lead posts the deal.** A brief, then each role with a fixed price, an upfront deposit, and milestones. Every milestone has a **"Done when"** ("Track 1 mixed, 24-bit WAV, up to 2 rounds of changes").
+2. **Everyone agrees, or pushes back.** Each person accepts, counter-offers on price and deposit, or declines. Any change creates a new version, and everyone signs again. Nothing binds until everyone has agreed.
+3. **The money is locked in first.** The Lead funds a vault on Tempo. Deposits go out the same second.
+4. **Work gets paid as it's delivered.** The collaborator submits; the Lead approves (paid instantly), asks for changes (limited rounds), or says nothing (paid automatically after 7 days).
+5. **Disagreements have an ending.** After the agreed revision rounds, either side can open a dispute. Both state their case, CrewPay review reads the "Done when" and the group chat, and splits the money. Final.
+
+The crew talks in a WhatsApp-style chat with files and voice notes. Only the group chat is evidence; private DMs never are.
+
+## Why Tempo
+
+- **Dollars, not tokens.** The vault holds a dollar stablecoin. Fees are paid in dollars too, so nobody ever buys a gas coin.
+- **Nobody pays fees.** CrewPay sponsors every transaction through Tempo's fee sponsorship. A collaborator with $0 can sign a contract and get paid.
+- **No wallet app, no seed phrase.** Every wallet is a **passkey**: Face ID, a fingerprint, a Windows PIN, or a phone. Built on the Tempo Accounts SDK.
+- **Every payout carries a reference.** The vault pays with `transferWithMemo`, tagging each payment with its project, like a bank transfer reference.
+- **Cheap enough to disappear.** A whole project (two agreements, funding, two deposits, a submission and an approval) cost about **$0.003** in fees on testnet.
+
+## Try it
+
+**Live, on Tempo testnet:** open https://payclaw-six.vercel.app, sign in with your email, and create your wallet with a passkey. Create a project and invite a second account (a private window works). Sign as the collaborator, then fund as the Lead: "Get test dollars" tops you up for free. Then submit work, approve it, and watch the payment land in the collaborator's wallet.
+
+**Demo, no sign-in:** click **Explore the demo** on the sign-in screen. Use **Viewing as** to play every side, and **Skip 7 days** to watch auto-approval fire.
+
+## How it works
+
+```
+Browser (React)                     Server (Vercel)                 Tempo testnet
+───────────────                     ───────────────                 ─────────────
+Passkey wallet ── one tap ────────► /api/relay  (co-signs as fee ─► CrewPayVault
+ agree · fund · submit · approve      payer; vault calls only)       holds pathUSD,
+                                                                     enforces the rules,
+                 ◄── events ─────── /api/sync   (records what   ◄── pays with memos
+                                      the vault did, once)
+Supabase: accounts, projects, chat, files (row-level security)
+```
+
+- **The vault decides everything about money.** `contracts/contracts/CrewPayVault.sol`: deposits on funding, approve and pay, limited change requests, release after 7 days of silence, disputes and rulings, reclaim after a missed deadline, and cancel only if everyone agrees. 22 tests.
+- **Agreeing to terms.** The terms (every person's wallet, every amount and deadline, the draft version) are hashed. Each collaborator calls `agree(hash)` with their passkey. The vault refuses to be funded unless every collaborator agreed to that exact hash, so changing anything means agreeing again.
+- **Proving what was submitted.** A submission's note and files are hashed into the vault transaction. The server only records the words and files that match that hash.
+- **The database can't lie about the chat.** System messages (signed, funded, paid, ruled) are written only by database functions and the server, never by a browser. 87 database security and action tests.
+
+## Run it yourself
+
+You need [Node.js](https://nodejs.org) (LTS).
 
 ```bash
 git clone https://github.com/louis-d-great/PayClaw.git
@@ -23,78 +61,44 @@ npm install
 npm start
 ```
 
-Your browser opens CrewPay automatically at http://localhost:5173. Leave the terminal open while you use it; press Ctrl+C to stop. To get the latest changes later: `git pull`, then `npm install`.
+Without settings it opens the demo. To run it live, follow [docs/SETUP.md](docs/SETUP.md) (Supabase, Vercel, Tempo testnet) and fill in `.env.local` from `.env.example`.
 
-With a `.env.local` (see `.env.example` and [docs/SETUP.md](docs/SETUP.md)), CrewPay runs **live** on Supabase: sign in by email link, create real projects, invite people by handle, sign, counter-offer, and chat with files and voice notes. Without it, or by clicking **Explore the demo** on the sign-in screen, it runs the **demo** below with sample projects.
-
-In the demo, use **Viewing as** in the top bar to switch between Louis, Tobi, Ada, Kemi and **CrewPay review** (the dispute reviewer). **Skip 7 days** at the bottom moves the clock forward so you can watch auto-approval fire. **Reset demo data** on the dashboard restores the sample projects.
-
-## Try this flow
-
-1. As **Louis**, open *Oja — shop website*. The vault shows what's been paid, and "Needs you" lists what's waiting on you.
-2. Open **Remaining 3 pages**: ask for changes (the last round), switch to **Ada** and resubmit, then back as Louis approve it. The vault pays her.
-3. Open **Site live on staging**: it's in dispute. Add Louis's side, then switch to **CrewPay review** and issue a ruling that splits the money.
-4. Open **Copy for all 5 pages**: the deadline passed with nothing submitted, so Louis can reclaim it.
-5. As **Tobi**, submit **Launch + handover**, then press **Skip 7 days**. It auto-approves and pays.
-6. As Louis, open *Lagos Nights EP* and accept Ada's counter-offer ($550, 30% up front). Everyone has to sign again.
-
-7. **Chat:** in any project, reply to a message, attach a photo or file, or record a voice note (🎙). The tabs above the chat switch between the group chat and a private DM with each member.
-8. **Open roles:** as **Tobi**, open the Mix engineer invite on *Lagos Nights EP* and apply with a portfolio link. Back as Louis, pick an applicant.
-9. **Edit or cancel:** before funding, the Lead can **Edit draft** (everyone re-signs) or cancel. After funding, **Cancel the project** needs everyone to agree.
-10. **Profiles:** click anyone's name, or **Profile** in the top bar, to see their track record and work receipts.
-
-## Milestone rules
-
-| Rule | What happens |
+| Check | Command |
 | --- | --- |
-| Deposit first | Each role's upfront deposit is paid the moment the vault is funded. |
-| Done when | Every milestone has a definition of done, signed by both sides. Reviews are judged against it. |
-| 7-day review | Lead silent for 7 days after a submission means it auto-approves and pays. |
-| Limited revisions | Each milestone allows N change requests (default 2). After that: approve, or open a dispute. |
-| Finals unlock on payment | Previews are open, final files stay locked until the milestone is paid. |
-| Disputes | Both sides state their case for 3 days. CrewPay review reads the "Done when", submissions and group chat (never DMs), then splits the money. Final. |
-| No ghosting | A deadline passed by 7 days with nothing submitted lets the Lead reclaim that milestone's money. |
+| App build and types | `npm run build` |
+| Vault tests | `cd contracts && npm install && npm test` |
+| Database tests | `supabase/tests/run.sh` (needs Postgres 16; runs in CI) |
+| Full project on live testnet | `cd contracts && VAULT_ADDRESS=0x… npx hardhat run scripts/smoke-tempo.js --network tempoTestnet` |
 
-All of these live in `src/lib/rules.ts`, which is what the vault contract will enforce.
+## What's real and what isn't yet
 
-## What's real and what's mocked
+| Piece | Status |
+| --- | --- |
+| Sign-in, projects, versions, counter-offers, open roles, chat, DMs, files | Live (Supabase) |
+| Passkey wallets, sponsored fees | Live (Tempo testnet) |
+| Agree, fund, deposits, submit, approve, changes, 7-day release, dispute, ruling | Live (Tempo testnet vault) |
+| Money | Test dollars (pathUSD from Tempo's faucet) |
+| Cancelling a funded project | Demo only |
+| Paying in and cashing out in naira, cedis or dollars | Next: an on/off-ramp partner such as Yellow Card or Bridge |
+| Reviewer and owner keys | Single test keys now; a multi-signature setup before real money |
+| Security audit of the vault | Needed before mainnet |
 
-| Piece | Now | Next |
-| --- | --- | --- |
-| Screens, flow, rules (signing, versions, counter-offers) | Real | — |
-| Accounts | Supabase email sign-in and profiles (demo: "Viewing as") | Coinbase Smart Wallet |
-| Projects, signing, counter-offers, open roles, chat, DMs, files | Supabase, live updates (demo: `localStorage`) | — |
-| Milestone work, disputes, funding | Demo only | Live with the vault contract |
-| Signatures | Button | EIP-712 signature over (project, version, role, pay) |
-| Vault + payouts | Simulated ledger | Solidity escrow on Base: deposits, milestone release, auto-approve, rulings |
-| Files | Names only | Supabase Storage, finals locked until paid |
-| Bank payouts | Saved preference | Offramp partner (phase 2) |
+## Built during the hackathon
 
-## Rules the code enforces
-
-- Every change to the draft bumps its **version**. A signature only counts for the version it was made on, so any change asks everyone to sign again (`src/store.tsx`).
-- Pay is a **fixed amount per role**. A raise comes out of the Lead's budget, not a teammate's pay.
-- Everyone sees everyone's pay.
-- The project can only be funded once every role is signed.
-
-## Stack
-
-React 19 · TypeScript · Tailwind CSS v4 · Vite · React Router
+The first commit is dated 2026-09-28, inside the judged window (Sep 14 – Oct 12, 2026). Everything in this repository was built during the hackathon; the git history shows every step.
 
 ## Project map
 
 ```
-src/
-  types.ts               Project, Role, Milestone, Message
-  store.tsx              State, actions, demo data (swap for Supabase later)
-  pages/CreateProject    Screen 1: brief, roles, pay, milestones
-  pages/ReviewAndSign    Screen 2: accept, counter-offer, decline, sign
-  lib/rules.ts           Deposit, milestone, review, dispute and reclaim rules
-  pages/ProjectPage      Signatures, invite links, funding, vault, work, chat
-  pages/MilestonePage    Submit, review, revisions, dispute and ruling
-  pages/ProfilePage      Track record and work history
-  pages/ReceiptPage      Public work receipt for a project
-  components/Chat        Group chat + DMs: replies, files, voice notes, seen ticks
-  lib/reputation.ts      Track record computed from signed work and payouts
-  pages/Dashboard        Projects I lead / Projects I'm on
+contracts/                  CrewPayVault (Solidity), tests, Tempo deploy + smoke test
+api/relay.ts                Fee sponsorship: CrewPay pays users' fees, vault calls only
+api/sync.ts                 Mirrors vault events into Supabase, once each
+api/review.ts               CrewPay review: open disputes and rulings
+api/faucet.ts               Testnet top-ups
+src/lib/tempo.ts            Passkey wallets, terms, vault calls
+src/live.ts, src/store.tsx  Live (Supabase) and demo data
+src/pages/                  Create, review & sign, project, milestone, review, profile
+supabase/migrations/        Schema, row-level security, actions
 ```
+
+React 19 · TypeScript · Tailwind CSS v4 · Vite · Supabase · Tempo Accounts SDK · viem · Hardhat · Vercel

@@ -20,7 +20,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
   cx('rounded-full px-3 py-1.5 text-sm font-medium transition', isActive ? 'bg-ink text-paper' : 'text-muted hover:text-ink')
 
 export default function Layout() {
-  const { me, dispatch, clockOffset, mode, setMode, signOut, notice, clearNotice } = useStore()
+  const { me, dispatch, clockOffset, mode, setMode, signOut, notice, clearNotice, busy } = useStore()
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(clearNotice, 8000)
@@ -80,7 +80,18 @@ export default function Layout() {
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6">
         <Outlet />
       </main>
-      {notice && (
+      {busy && (
+        <div
+          role="status"
+          className="fixed left-1/2 top-20 z-40 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-card p-4 text-sm shadow-[0_8px_30px_-12px_rgba(29,27,22,.35)]"
+        >
+          <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-ink/20 border-t-ink" />
+          <p className="flex-1 leading-relaxed">
+            {busy} <span className="text-muted">Confirm with your passkey if asked. CrewPay covers the fee.</span>
+          </p>
+        </div>
+      )}
+      {notice && !busy && (
         <div
           role="status"
           className="fixed left-1/2 top-20 z-40 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-start gap-3 rounded-2xl border border-line bg-card p-4 text-sm shadow-[0_8px_30px_-12px_rgba(29,27,22,.35)]"

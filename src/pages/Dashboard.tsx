@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Badge, Card, Money, cx } from '../components/ui'
 import { WalletCard } from '../components/Wallet'
+import { useIsReviewer } from './ReviewPage'
 import { shortDate } from '../lib/format'
 import { projectStatus, roleStatus } from '../lib/status'
 import { budget, isSigned, personName, signedCount, useStore } from '../store'
@@ -12,6 +13,7 @@ type View = 'lead' | 'crew'
 export default function Dashboard() {
   const { projects, me, dispatch, mode } = useStore()
   const [view, setView] = useState<View>('lead')
+  const isReviewer = useIsReviewer(mode === 'live')
 
   const leading = projects.filter((p) => p.lead === me && !p.guest)
   const joined = projects.filter((p) => p.lead !== me && p.roles.some((r) => r.assignee === me))
@@ -34,6 +36,14 @@ export default function Dashboard() {
       </div>
 
       <WalletCard />
+
+      {isReviewer && (
+        <Link to="/review" className="mb-8 flex items-center gap-3 rounded-3xl border border-warn/30 bg-warn-soft/50 p-5 hover:bg-warn-soft">
+          <span className="h-2 w-2 rounded-full bg-warn" />
+          <span className="font-medium">You’re a CrewPay reviewer.</span>
+          <span className="text-sm text-muted">Open disputes to rule on →</span>
+        </Link>
+      )}
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
         <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />
