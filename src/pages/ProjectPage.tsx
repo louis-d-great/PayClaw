@@ -238,7 +238,7 @@ function LiveFund({ project }: { project: Project }) {
             CrewPay covers the network fee.
           </p>
           <p className="mt-2 text-xs text-muted">
-            Your wallet: {balance === undefined ? 'checking…' : `${(Math.floor(balance * 100) / 100).toLocaleString('en-US')}`}
+            Your wallet: {balance === undefined ? 'checking…' : `$${(Math.floor(balance * 100) / 100).toLocaleString('en-US')}`}
             {short && ' · not enough yet'}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
