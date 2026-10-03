@@ -1,11 +1,26 @@
 # CrewPay vault contract
 
-`CrewPayVault` holds a crew's budget in USDC on Base and releases it only by the rules everyone signed. Nobody, including the contract owner, can move money any other way.
+`CrewPayVault` holds a crew's budget in a dollar stablecoin and releases it only by the rules everyone agreed to. Nobody, including the contract owner, can move money any other way. It runs on **Tempo** (Stripe and Paradigm's payments chain), and on Base with USDC.
+
+## Live on Tempo testnet (Moderato)
+
+| | |
+| --- | --- |
+| Vault | [`0xCEb2e939DE06360eB2fE68e07A2589059d9CAc2A`](https://explore.testnet.tempo.xyz/address/0xCEb2e939DE06360eB2fE68e07A2589059d9CAc2A) |
+| Stablecoin | pathUSD `0x20c0000000000000000000000000000000000000` (6 decimals, also the default fee token) |
+| Chain | 42431, RPC `https://rpc.moderato.tempo.xyz` |
+| Reviewer | `0x7Ca2907a94c99b10Ca09302ce8182eB0490E04e6` (test key) |
+
+A full run on the live testnet (`scripts/smoke-tempo.js`): agree ×2, approve, fund with two deposits, submit, approve. Total fees: **about $0.003**. Funding is the biggest step (3.4M gas, $0.002) because Tempo charges more than Ethereum for new storage.
 
 ## How it works
 
-1. The crew agrees on terms in the app. Each collaborator signs the final terms with their wallet (EIP-712). Coinbase Smart Wallets (ERC-1271) work too.
-2. The Lead calls `fund(terms, signatures)`. The vault checks every signature, pulls the full budget from the Lead and pays each **deposit** straight away.
+1. The crew agrees on terms in the app. Each collaborator then agrees to the final terms in one of two ways:
+   - `agree(termsDigest)`: one on-chain tap. Works for **any account, including passkey accounts**, which can't produce the signatures below.
+   - Sign the terms with their wallet (EIP-712). Smart wallets (ERC-1271) work too.
+   The digest covers the chain, the vault, the project, the draft version and every role's pay, so agreeing to one draft says nothing about another.
+2. The Lead calls `fund(terms, signatures)`, passing empty bytes for anyone who agreed on-chain. The vault checks everyone agreed, pulls the full budget from the Lead and pays each **deposit** straight away.
+   On Tempo, every payout uses `transferWithMemo` with the project id as the memo, like a bank transfer reference.
 3. For each milestone:
    - `submit`: the collaborator hands in work (a hash of it).
    - `approve`: the Lead releases the milestone's money.
@@ -33,11 +48,23 @@ The terms type is in `lib/terms.js`. The app signs exactly this shape, and a tes
 ```bash
 cd contracts
 npm install
-npm test            # 17 tests: funding, signatures, milestones, auto-release, reclaim, disputes, cancel
+npm test            # 22 tests: funding, signatures, on-chain agreement, Tempo memos, milestones, auto-release, reclaim, disputes, cancel
 npm run build
 ```
 
 The Solidity compiler comes from npm (`solc`), so it builds without downloading anything else.
+
+## Deploy to Tempo testnet
+
+1. Put a throwaway deployer key and a reviewer address in `contracts/.env` (git-ignored): `DEPLOYER_PRIVATE_KEY=0x…`, `REVIEWER_ADDRESS=0x…`.
+2. Fund the deployer with test stablecoins: `curl -s https://rpc.moderato.tempo.xyz -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tempo_fundAddress","params":["0xYOUR_ADDRESS"]}'`. Tempo has no gas coin: fees are paid in pathUSD.
+3. Deploy and check it end to end:
+
+```bash
+set -a; . ./.env; set +a
+npm run deploy:tempo-testnet
+VAULT_ADDRESS=0x… npx hardhat run scripts/smoke-tempo.js --network tempoTestnet
+```
 
 ## Deploy to Base Sepolia (testnet)
 
@@ -49,7 +76,7 @@ The Solidity compiler comes from npm (`solc`), so it builds without downloading 
 DEPLOYER_PRIVATE_KEY=0x... REVIEWER_ADDRESS=0x... npm run deploy:base-sepolia
 ```
 
-4. Put the printed address in the app as `VITE_VAULT_ADDRESS`.
+4. Put the printed address in the app as `VITE_VAULT_ADDRESS`. On Base the vault is deployed without memos (`memos = false`).
 
 Never commit a private key. `.env` is git-ignored.
 

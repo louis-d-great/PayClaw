@@ -8,14 +8,21 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/// @dev Tempo's TIP-20 stablecoins can tag a transfer with a 32-byte memo, like a bank reference.
+interface ITIP20Memo {
+    function transferWithMemo(address to, uint256 amount, bytes32 memo) external;
+}
+
 /// @title CrewPay vault
-/// @notice Holds a crew's budget in USDC and releases it only by the rules everyone signed:
+/// @notice Holds a crew's budget in a dollar stablecoin and releases it only by the rules everyone signed:
 ///         deposits first, then each milestone when the Lead approves it, when the Lead stays
 ///         silent for 7 days, or as split by the reviewer in a dispute. Nobody, including the
 ///         contract owner, can move money any other way.
 /// @dev One contract holds every project, keyed by projectId. Drafting and negotiation happen
-///      off-chain; each collaborator signs the final terms (EIP-712, EOA or ERC-1271 smart
-///      wallet), and the Lead submits those signatures while funding, in one transaction.
+///      off-chain; each collaborator agrees to the final terms either by signing them (EIP-712,
+///      EOA or ERC-1271 smart wallet) or by calling agree() with their digest, which works for
+///      any account, including passkey accounts. The Lead then funds, in one transaction.
+///      On Tempo every payout carries the projectId as its transfer memo.
 contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -104,16 +111,20 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
         MilestoneStatus status;
     }
 
-    IERC20 public immutable usdc;
+    IERC20 public immutable token; // the dollar stablecoin: USDC on Base, a TIP-20 stablecoin on Tempo
+    bool public immutable memos; // true on Tempo: payouts use transferWithMemo(projectId)
     address public reviewer; // rules on disputes; can only split a disputed milestone's money
 
     mapping(bytes32 => Project) public projects;
     mapping(bytes32 => Role[]) private _roles;
     mapping(bytes32 => mapping(uint256 => Milestone[])) private _milestones;
+    /// @notice Terms each account agreed to on-chain: agreed[account][termsDigest].
+    mapping(address => mapping(bytes32 => bool)) public agreed;
 
     // ---------------------------------------------------------------- events
 
     event ReviewerChanged(address indexed reviewer);
+    event Agreed(bytes32 indexed termsDigest, address indexed by);
     event Funded(bytes32 indexed projectId, address indexed lead, uint32 version, uint256 total, bytes32 termsDigest);
     event DepositPaid(bytes32 indexed projectId, uint256 indexed role, address indexed to, uint256 amount);
     event WorkSubmitted(bytes32 indexed projectId, uint256 indexed role, uint256 indexed milestone, bytes32 workHash);
@@ -146,8 +157,9 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
     error NoCancelRequest();
     error AlreadyApproved();
 
-    constructor(IERC20 usdc_, address reviewer_, address owner_) EIP712("CrewPay", "1") Ownable(owner_) {
-        usdc = usdc_;
+    constructor(IERC20 token_, bool memos_, address reviewer_, address owner_) EIP712("CrewPay", "1") Ownable(owner_) {
+        token = token_;
+        memos = memos_;
         reviewer = reviewer_;
         emit ReviewerChanged(reviewer_);
     }
@@ -184,9 +196,18 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
 
     // ---------------------------------------------------------------- funding
 
-    /// @notice The Lead funds the vault with everyone's signatures on the final terms.
+    /// @notice Agree to terms on-chain instead of signing them. The digest covers the chain, this
+    ///         vault, the project, the draft version and every role's pay, so agreeing to one draft
+    ///         says nothing about any other.
+    function agree(bytes32 termsDigest_) external {
+        agreed[msg.sender][termsDigest_] = true;
+        emit Agreed(termsDigest_, msg.sender);
+    }
+
+    /// @notice The Lead funds the vault once every collaborator has agreed to the final terms.
     ///         Deposits are paid out in the same transaction.
-    /// @param signatures One signature per role, in role order, by that role's collaborator.
+    /// @param signatures One entry per role, in role order: that collaborator's signature, or
+    ///        empty bytes if they agreed on-chain with agree().
     function fund(Terms calldata t, bytes[] calldata signatures) external nonReentrant {
         if (msg.sender != t.lead) revert NotLead();
         Project storage p = projects[t.projectId];
@@ -200,7 +221,9 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
             RoleTerms calldata rt = t.roles[r];
             uint256 ms = rt.milestones.length;
             if (rt.collaborator == address(0) || ms > MAX_MILESTONES || (ms == 0 && rt.deposit == 0)) revert BadTerms();
-            if (!SignatureChecker.isValidSignatureNow(rt.collaborator, digest, signatures[r])) revert BadSignature(r);
+            if (!agreed[rt.collaborator][digest] && !SignatureChecker.isValidSignatureNow(rt.collaborator, digest, signatures[r])) {
+                revert BadSignature(r);
+            }
 
             _roles[t.projectId].push(Role({collaborator: rt.collaborator, deposit: rt.deposit}));
             total += rt.deposit;
@@ -227,7 +250,7 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
         p.status = ProjectStatus.Active;
         p.total = uint128(total);
 
-        usdc.safeTransferFrom(msg.sender, address(this), total);
+        token.safeTransferFrom(msg.sender, address(this), total);
         emit Funded(t.projectId, t.lead, t.version, total, digest);
 
         for (uint256 r; r < n; ++r) {
@@ -367,7 +390,7 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
             p.cancelRequested = false;
             if (refund > 0) {
                 p.settled += uint128(refund);
-                usdc.safeTransfer(p.lead, refund);
+                _send(projectId, p.lead, refund);
             }
             emit ProjectCancelled(projectId, refund);
         }
@@ -392,7 +415,12 @@ contract CrewPayVault is EIP712, Ownable2Step, ReentrancyGuard {
 
     function _payOut(bytes32 projectId, address to, uint256 amount) private {
         projects[projectId].settled += uint128(amount);
-        usdc.safeTransfer(to, amount);
+        _send(projectId, to, amount);
+    }
+
+    function _send(bytes32 projectId, address to, uint256 amount) private {
+        if (memos) ITIP20Memo(address(token)).transferWithMemo(to, amount, projectId);
+        else token.safeTransfer(to, amount);
     }
 
     function _maybeComplete(bytes32 projectId) private {
