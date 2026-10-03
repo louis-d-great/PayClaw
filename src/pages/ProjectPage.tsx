@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import ChatPanel from '../components/Chat'
+import { CreateWalletButton, friendlyError, useBalance } from '../components/Wallet'
+import { fund, getTestDollars, notAgreed, termsBlocker, termsFor, txUrl, walletsEnabled } from '../lib/tempo'
 import { Avatar, Badge, Button, Card, Input, Money, PersonLink, TextArea } from '../components/ui'
 import { shortDate } from '../lib/format'
 import Schedule from '../components/Schedule'
@@ -137,6 +139,8 @@ function SignatureGate({
   onFund: () => void
 }) {
   const [funding, setFunding] = useState(false)
+  const { mode } = useStore()
+  const liveWallets = mode === 'live' && walletsEnabled
   const total = project.roles.length
 
   return (
@@ -157,10 +161,11 @@ function SignatureGate({
           </div>
         ))}
       </div>
-      {project.status === 'ready' && isLead && (
+      {project.status === 'ready' && isLead && liveWallets && <LiveFund project={project} />}
+      {project.status === 'ready' && isLead && !liveWallets && (
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl bg-accent-soft/60 p-4">
           <p className="flex-1 text-sm">
-            Fund the vault with <b>${budget(project).toLocaleString('en-US')} USDC</b>. Your crew sees the money before they start.
+            Fund the vault with <b>${budget(project).toLocaleString('en-US')}</b>. Your crew sees the money before they start.
           </p>
           <Button
             variant="accent"
@@ -175,6 +180,100 @@ function SignatureGate({
         </div>
       )}
     </Card>
+  )
+}
+
+// Live: the Lead funds the vault on Tempo. One passkey prompt approves the budget and funds it;
+// deposits pay out in the same transaction. Then /api/sync records it for everyone.
+function LiveFund({ project }: { project: Project }) {
+  const { me, profiles, refresh } = useStore()
+  const wallet = profiles[me]?.wallet as `0x${string}` | undefined
+  const { balance, refresh: refreshBalance } = useBalance(wallet)
+  const [stage, setStage] = useState<'idle' | 'topping' | 'funding' | 'recording'>('idle')
+  const [error, setError] = useState('')
+  const [tx, setTx] = useState('')
+  const total = budget(project)
+  const wallets = Object.fromEntries(Object.entries(profiles).map(([h, p]) => [h, p.wallet]))
+  const blocker = wallet ? termsBlocker(project, wallets, personName) : undefined
+  const short = balance !== undefined && balance < total
+
+  const go = async () => {
+    setError('')
+    try {
+      const terms = termsFor(project, wallets)
+      const pending = await notAgreed(terms)
+      if (pending.length) {
+        const who = Object.entries(wallets)
+          .filter(([, w]) => w && pending.some((p) => p.toLowerCase() === w.toLowerCase()))
+          .map(([h]) => personName(h))
+        throw new Error(`${who.join(', ') || 'Someone'} still needs to sign this version with their passkey.`)
+      }
+      setStage('funding')
+      const hash = await fund(wallet!, terms)
+      setTx(hash)
+      setStage('recording')
+      await fetch('/api/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ projectId: project.id, txHash: hash }) })
+      await refresh(project.id)
+      refreshBalance()
+    } catch (e) {
+      setError(friendlyError(e))
+    } finally {
+      setStage('idle')
+    }
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl bg-accent-soft/60 p-4">
+      {!wallet ? (
+        <>
+          <p className="mb-3 text-sm">To fund the vault you need your CrewPay wallet. Create it with a passkey: Face ID, fingerprint, Windows PIN or your phone.</p>
+          <CreateWalletButton />
+        </>
+      ) : blocker ? (
+        <p className="text-sm text-warn">{blocker}</p>
+      ) : (
+        <>
+          <p className="text-sm">
+            Fund the vault with <b>${total.toLocaleString('en-US')}</b>. Deposits go out the moment it lands, and your crew can see the money before they start.
+            CrewPay covers the network fee.
+          </p>
+          <p className="mt-2 text-xs text-muted">
+            Your wallet: {balance === undefined ? 'checking…' : `${(Math.floor(balance * 100) / 100).toLocaleString('en-US')}`}
+            {short && ' · not enough yet'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {short && (
+              <Button
+                variant="outline"
+                disabled={stage !== 'idle'}
+                onClick={async () => {
+                  setStage('topping')
+                  try {
+                    await getTestDollars(wallet)
+                    refreshBalance()
+                  } catch (e) {
+                    setError(friendlyError(e))
+                  } finally {
+                    setStage('idle')
+                  }
+                }}
+              >
+                {stage === 'topping' ? 'Adding test dollars…' : 'Get test dollars'}
+              </Button>
+            )}
+            <Button variant="accent" disabled={stage !== 'idle' || short || balance === undefined} onClick={go}>
+              {stage === 'funding' ? 'Confirm with your passkey…' : stage === 'recording' ? 'Recording…' : 'Fund project'}
+            </Button>
+          </div>
+        </>
+      )}
+      {error && <p className="mt-3 text-sm text-warn">{error}</p>}
+      {tx && (
+        <a href={txUrl(tx)} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-muted underline">
+          Funded on Tempo ↗
+        </a>
+      )}
+    </div>
   )
 }
 
@@ -298,7 +397,7 @@ function WorkCard({ project, role }: { project: Project; role: Role }) {
     role.payout?.method === 'bank'
       ? `Bank · ${role.payout.bank?.name} ${role.payout.bank?.currency}`
       : role.payout?.method === 'wallet'
-        ? 'USDC wallet'
+        ? 'CrewPay wallet'
         : undefined
   return (
     <Card className="p-6">

@@ -19,9 +19,12 @@ Groups who work and get paid together (music collabs, design duos, freelance tea
 
 ## State of the code
 
-- Front-end prototype (React 19, TypeScript, Tailwind v4, Vite, React Router). Wallets, vault and database are mocked; data lives in `localStorage`. "Viewing as" switches users; "Skip 7 days" moves the demo clock.
+- React 19, TypeScript, Tailwind v4, Vite, React Router. Two modes in `src/store.tsx`: **live** (Supabase, when `.env.local` has `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) and **demo** (`localStorage`, "Viewing as", "Skip 7 days"). Live covers sign-in, profiles, projects, signing, counter-offers, open roles, draft edits and chat/DMs with files; `src/live.ts` maps rows to the app's types and actions to database functions in `supabase/migrations/0002_live_actions.sql`. Funding, milestone work and disputes are demo-only until the vault is wired.
+- Database tests: `supabase/tests/run.sh` (CI runs it). Every cross-person action and every system message goes through a security-definer function; clients can't write system messages.
 - `main` on GitHub (`louis-d-great/PayClaw`) has the full app (milestones, disputes, chat with files/voice/DMs, applications, edit/cancel, profiles, `npm start`), the Solidity vault for Base with tests and CI, and the Supabase schema + security rules and Vercel config.
-- Next: move storage/chat/files to Supabase (needs the user's project URL and public key), real sign-in + Coinbase Smart Wallet, EIP-712 signatures, wire the vault.
+- **Hackathon:** Colosseum Crypto World's Fair, **Tempo track**, submissions due **2026-10-12**. Code started 2026-09-28 (inside the judged window; disclose it).
+- **Chain: Tempo** (Stripe/Paradigm payments L1, no native coin, fees in stablecoins). Vault live on Tempo testnet at `0xCEb2e939DE06360eB2fE68e07A2589059d9CAc2A`, holding pathUSD, payouts tagged with `transferWithMemo(projectId)`. Collaborators agree with `agree(termsDigest)` so passkey accounts work. Test-only keys live in `contracts/.env` (git-ignored).
+- Next: passkey sign-in (Tempo Accounts SDK) with CrewPay sponsoring fees, then fund / submit / approve / dispute against the vault from the app, then the README, pitch video and demo video.
 
 ## Working here
 

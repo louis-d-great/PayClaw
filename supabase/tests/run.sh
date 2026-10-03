@@ -21,4 +21,7 @@ psql=(psql -h /tmp -p "$port" -U postgres -v ON_ERROR_STOP=1 -q)
 "${psql[@]}" -c 'create database crewpay'
 "${psql[@]}" -d crewpay -f "$here/shim.sql"
 "${psql[@]}" -d crewpay -f "$here/../migrations/0001_init.sql"
+"${psql[@]}" -d crewpay -f "$here/../migrations/0002_live_actions.sql"
+"${psql[@]}" -d crewpay -f "$here/../migrations/0003_passkey_wallets.sql"
 "${psql[@]}" -d crewpay -f "$here/rls.test.sql" 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /' | grep -v '^$'
+"${psql[@]}" -d crewpay -f "$here/actions.test.sql" 2>&1 | sed 's/^psql:[^:]*:[0-9]*: NOTICE:  /  /' | grep -v '^$'

@@ -1,6 +1,6 @@
 import type { Milestone, Project, Role } from '../types'
 
-// The protocol rules. These are what the vault contract will enforce on Base;
+// The protocol rules. These are what the vault contract enforces on Tempo;
 // keeping them in one place makes the port straightforward.
 export const AUTO_APPROVE_DAYS = 7 // Lead silent this long after a submission → it pays out
 export const GRACE_DAYS = 7 // past a deadline with nothing submitted → Lead may reclaim

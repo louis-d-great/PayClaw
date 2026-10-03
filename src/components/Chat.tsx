@@ -6,7 +6,7 @@ import { Avatar, Badge, Button, cx } from './ui'
 
 const readFile = async (f: File | Blob, name: string): Promise<Attachment> => {
   const r = await readRaw(f, name)
-  return { ...r, kind: mediaKind(r.mime) }
+  return { ...r, kind: mediaKind(r.mime), blob: f }
 }
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 

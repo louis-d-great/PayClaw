@@ -21,4 +21,5 @@ export const timeAgo = (iso: string) => {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-export const uid = () => crypto.randomUUID().slice(0, 8)
+// Full UUIDs: live projects, roles and milestones keep the ids they're created with.
+export const uid = () => crypto.randomUUID()

@@ -127,7 +127,7 @@ export default function CreateProject({ editing }: { editing?: Project }) {
       return
     }
     const project: Project = {
-      id: `${name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${uid().slice(0, 4)}`,
+      id: uid(),
       name: name.trim(),
       brief: brief.trim(),
       deadline: deadline || undefined,
@@ -323,7 +323,7 @@ function RoleEditor({
           <Input value={r.assignee} onChange={(e) => update({ assignee: e.target.value })} placeholder="@handle" />
         </label>
         <label className="block">
-          <Label>Pay (USDC)</Label>
+          <Label>Pay (USD)</Label>
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">$</span>
             <Input

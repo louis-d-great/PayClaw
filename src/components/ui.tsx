@@ -104,7 +104,7 @@ export function Money({ value, className }: { value: number; className?: string 
   return (
     <span className={cx('font-display tabular-nums', className)}>
       ${value.toLocaleString('en-US')}
-      <span className="ml-1 align-middle text-[0.45em] font-sans font-medium tracking-wide text-muted">USDC</span>
+      <span className="ml-1 align-middle text-[0.45em] font-sans font-medium tracking-wide text-muted">USD</span>
     </span>
   )
 }

@@ -25,7 +25,9 @@ npm start
 
 Your browser opens CrewPay automatically at http://localhost:5173. Leave the terminal open while you use it; press Ctrl+C to stop. To get the latest changes later: `git pull`, then `npm install`.
 
-Use **Viewing as** in the top bar to switch between Louis, Tobi, Ada, Kemi and **CrewPay review** (the dispute reviewer). **Skip 7 days** at the bottom moves the clock forward so you can watch auto-approval fire. **Reset demo data** on the dashboard restores the sample projects.
+With a `.env.local` (see `.env.example` and [docs/SETUP.md](docs/SETUP.md)), CrewPay runs **live** on Supabase: sign in by email link, create real projects, invite people by handle, sign, counter-offer, and chat with files and voice notes. Without it, or by clicking **Explore the demo** on the sign-in screen, it runs the **demo** below with sample projects.
+
+In the demo, use **Viewing as** in the top bar to switch between Louis, Tobi, Ada, Kemi and **CrewPay review** (the dispute reviewer). **Skip 7 days** at the bottom moves the clock forward so you can watch auto-approval fire. **Reset demo data** on the dashboard restores the sample projects.
 
 ## Try this flow
 
@@ -60,8 +62,9 @@ All of these live in `src/lib/rules.ts`, which is what the vault contract will e
 | Piece | Now | Next |
 | --- | --- | --- |
 | Screens, flow, rules (signing, versions, counter-offers) | Real | — |
-| Accounts | "Viewing as" switcher | Sign-in + Coinbase Smart Wallet |
-| Storage, chat, DMs, profiles | `localStorage` (small files kept inline) | Supabase: schema and security rules ready on the `claude/backend-setup` branch |
+| Accounts | Supabase email sign-in and profiles (demo: "Viewing as") | Coinbase Smart Wallet |
+| Projects, signing, counter-offers, open roles, chat, DMs, files | Supabase, live updates (demo: `localStorage`) | — |
+| Milestone work, disputes, funding | Demo only | Live with the vault contract |
 | Signatures | Button | EIP-712 signature over (project, version, role, pay) |
 | Vault + payouts | Simulated ledger | Solidity escrow on Base: deposits, milestone release, auto-approve, rulings |
 | Files | Names only | Supabase Storage, finals locked until paid |

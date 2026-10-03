@@ -89,7 +89,7 @@ export default function ReceiptPage() {
       </Card>
 
       <p className="mt-6 text-sm leading-relaxed text-muted">
-        Every number on this receipt comes from the signed agreement and the project vault’s payouts. Once the vault runs on Base, this page links
+        Every number on this receipt comes from the signed agreement and the project vault’s payouts. Once the vault runs on Tempo, this page links
         to the contract and each payment transaction so anyone can verify it.
       </p>
     </div>

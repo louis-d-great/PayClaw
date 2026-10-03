@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, Badge, Card, Money, cx } from '../components/ui'
+import { WalletCard } from '../components/Wallet'
 import { shortDate } from '../lib/format'
 import { projectStatus, roleStatus } from '../lib/status'
 import { budget, isSigned, personName, signedCount, useStore } from '../store'
@@ -9,10 +10,10 @@ import { REVIEWER, type Project } from '../types'
 type View = 'lead' | 'crew'
 
 export default function Dashboard() {
-  const { projects, me, dispatch } = useStore()
+  const { projects, me, dispatch, mode } = useStore()
   const [view, setView] = useState<View>('lead')
 
-  const leading = projects.filter((p) => p.lead === me)
+  const leading = projects.filter((p) => p.lead === me && !p.guest)
   const joined = projects.filter((p) => p.lead !== me && p.roles.some((r) => r.assignee === me))
   const myRoles = joined.flatMap((p) => p.roles.filter((r) => r.assignee === me).map((r) => ({ p, r })))
   const toSign = myRoles.filter(({ p, r }) => p.status === 'signing' && !isSigned(p, r))
@@ -31,6 +32,8 @@ export default function Dashboard() {
         <p className="mb-2 text-sm font-medium text-accent">Hi {personName(me)}</p>
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Your projects</h1>
       </div>
+
+      <WalletCard />
 
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
         <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />
@@ -82,9 +85,11 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
-        <button onClick={() => dispatch({ type: 'reset' })} className="ml-auto text-xs text-muted hover:text-ink">
-          Reset demo data
-        </button>
+        {mode === 'demo' && (
+          <button onClick={() => dispatch({ type: 'reset' })} className="ml-auto text-xs text-muted hover:text-ink">
+            Reset demo data
+          </button>
+        )}
       </div>
 
       {list.length === 0 ? (

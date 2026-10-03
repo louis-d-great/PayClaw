@@ -15,8 +15,8 @@ const Router = import.meta.env.VITE_ROUTER === 'memory' ? MemoryRouter : Browser
 
 export default function App() {
   return (
-    <StoreProvider>
-      <Router>
+    <Router>
+      <StoreProvider>
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -29,7 +29,7 @@ export default function App() {
             <Route path="r/:projectId" element={<ReceiptPage />} />
           </Route>
         </Routes>
-      </Router>
-    </StoreProvider>
+      </StoreProvider>
+    </Router>
   )
 }

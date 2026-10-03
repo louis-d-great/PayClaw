@@ -12,7 +12,7 @@ const P = { None: 0n, Active: 1n, Done: 2n, Cancelled: 3n }
 async function deploy() {
   const [owner, lead, ada, tobi, reviewer, stranger] = await ethers.getSigners()
   const usdc = await (await ethers.getContractFactory('MockUSDC')).deploy()
-  const vault = await (await ethers.getContractFactory('CrewPayVault')).deploy(usdc, reviewer, owner)
+  const vault = await (await ethers.getContractFactory('CrewPayVault')).deploy(usdc, false, reviewer, owner)
   await usdc.mint(lead, usd(10_000))
   await usdc.connect(lead).approve(vault, ethers.MaxUint256)
   const now = await time.latest()
@@ -112,6 +112,71 @@ describe('CrewPayVault', () => {
       await expect(vault.connect(stranger).fund(terms, sigs)).to.be.revertedWithCustomError(vault, 'NotLead')
       await vault.connect(lead).fund(terms, sigs)
       await expect(vault.connect(lead).fund(terms, sigs)).to.be.revertedWithCustomError(vault, 'ProjectExists')
+    })
+  })
+
+  describe('agreeing on-chain (passkey accounts)', () => {
+    it('funds when collaborators agreed on-chain instead of signing', async () => {
+      const { vault, lead, ada, tobi, terms } = await loadFixture(deploy)
+      const digest = await vault.termsDigest(terms)
+      await expect(vault.connect(ada).agree(digest)).to.emit(vault, 'Agreed').withArgs(digest, ada.address)
+      await vault.connect(tobi).agree(digest)
+      await expect(vault.connect(lead).fund(terms, ['0x', '0x'])).to.emit(vault, 'Funded')
+    })
+
+    it('mixes on-chain agreement and signatures', async () => {
+      const { vault, lead, ada, tobi, terms, sign } = await loadFixture(deploy)
+      await vault.connect(ada).agree(await vault.termsDigest(terms))
+      await expect(vault.connect(lead).fund(terms, ['0x', await sign(tobi)])).to.emit(vault, 'Funded')
+    })
+
+    it('an agreement covers only those exact terms', async () => {
+      const { vault, lead, ada, tobi, terms } = await loadFixture(deploy)
+      await vault.connect(ada).agree(await vault.termsDigest(terms))
+      await vault.connect(tobi).agree(await vault.termsDigest(terms))
+      const raised = structuredClone(terms)
+      raised.roles[0].deposit = usd(500)
+      await expect(vault.connect(lead).fund(raised, ['0x', '0x'])).to.be.revertedWithCustomError(vault, 'BadSignature').withArgs(0)
+      const v2 = { ...structuredClone(terms), version: 2 }
+      await expect(vault.connect(lead).fund(v2, ['0x', '0x'])).to.be.revertedWithCustomError(vault, 'BadSignature').withArgs(0)
+    })
+
+    it('someone else agreeing does not count', async () => {
+      const { vault, lead, tobi, stranger, terms } = await loadFixture(deploy)
+      const digest = await vault.termsDigest(terms)
+      await vault.connect(stranger).agree(digest)
+      await vault.connect(tobi).agree(digest)
+      await expect(vault.connect(lead).fund(terms, ['0x', '0x'])).to.be.revertedWithCustomError(vault, 'BadSignature').withArgs(0)
+    })
+  })
+
+  describe('Tempo transfer memos', () => {
+    it('tags every payout with the project id', async () => {
+      const [owner, lead, ada, tobi, reviewer] = await ethers.getSigners()
+      const coin = await (await ethers.getContractFactory('MockTIP20')).deploy()
+      const vault = await (await ethers.getContractFactory('CrewPayVault')).deploy(coin, true, reviewer, owner)
+      await coin.mint(lead, usd(1000))
+      await coin.connect(lead).approve(vault, ethers.MaxUint256)
+      const terms = {
+        projectId: pid,
+        lead: lead.address,
+        version: 1,
+        roles: [
+          { collaborator: ada.address, deposit: usd(100), milestones: [{ amount: usd(400), due: 0, revisions: 1, doneWhen: text('Cover art') }] },
+          { collaborator: tobi.address, deposit: 0, milestones: [{ amount: usd(500), due: 0, revisions: 1, doneWhen: text('Mix') }] },
+        ],
+      }
+      const digest = await vault.termsDigest(terms)
+      await vault.connect(ada).agree(digest)
+      await vault.connect(tobi).agree(digest)
+      await expect(vault.connect(lead).fund(terms, ['0x', '0x']))
+        .to.emit(coin, 'TransferWithMemo')
+        .withArgs(await vault.getAddress(), ada.address, usd(100), pid)
+      await vault.connect(ada).submit(pid, 0, 0, text('art'))
+      await expect(vault.connect(lead).approve(pid, 0, 0))
+        .to.emit(coin, 'TransferWithMemo')
+        .withArgs(await vault.getAddress(), ada.address, usd(400), pid)
+      expect(await coin.balanceOf(ada)).to.equal(usd(500))
     })
   })
 

@@ -261,7 +261,7 @@ function ActionPanel({ project, role, m, amount }: { project: Project; role: Rol
     const how =
       role.payout?.method === 'bank'
         ? `sent to ${role.payout.bank?.name} ${role.payout.bank?.account} in ${role.payout.bank?.currency}`
-        : `sent as USDC to ${role.payout?.wallet ?? 'their wallet'}`
+        : 'sent in dollars to their CrewPay wallet'
     return (
       <Outcome tone="ok" title={`Paid $${amount.toLocaleString('en-US')}`} body={`The vault released this payment, ${how}. Final files are unlocked.`} />
     )
