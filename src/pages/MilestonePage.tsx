@@ -497,8 +497,10 @@ function FilePicker({ files, setFiles }: { files: FileRef[]; setFiles: (f: FileR
   const final = useRef<HTMLInputElement>(null)
   const add = async (list: FileList | null, kind: FileRef['kind']) => {
     if (!list) return
-    const read = await Promise.all([...list].map((f) => readFile(f, f.name)))
-    setFiles([...files, ...read.map((r, i) => ({ ...r, kind, blob: list[i] }))])
+    // Copy now: the picker is cleared right after this, which empties its FileList.
+    const picked = [...list]
+    const read = await Promise.all(picked.map((f) => readFile(f, f.name)))
+    setFiles([...files, ...read.map((r, i) => ({ ...r, kind, blob: picked[i] }))])
   }
   return (
     <div>
