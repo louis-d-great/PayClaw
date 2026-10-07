@@ -30,6 +30,7 @@ export type ProfileRow = {
   skills: string[]
   portfolio: string | null
   wallet_address?: string | null
+  email_updates?: boolean | null
 }
 type FileRow = { name: string; size: number; mime?: string; kind: string; path: string }
 type MessageRow = {
@@ -156,6 +157,7 @@ export class People {
         skills: p.skills,
         portfolio: opt(p.portfolio),
         wallet: p.wallet_address ?? undefined,
+        emailUpdates: p.email_updates ?? true,
       }
     return out
   }
@@ -536,7 +538,13 @@ export async function perform(a: Action, ctx: { meId: string; people: People; pr
       await check(
         sb()
           .from('profiles')
-          .update({ name: a.profile.name, bio: a.profile.bio, skills: a.profile.skills, portfolio: a.profile.portfolio ?? null })
+          .update({
+            name: a.profile.name,
+            bio: a.profile.bio,
+            skills: a.profile.skills,
+            portfolio: a.profile.portfolio ?? null,
+            ...(a.profile.emailUpdates === undefined ? {} : { email_updates: a.profile.emailUpdates }),
+          })
           .eq('id', ctx.meId),
       )
       return

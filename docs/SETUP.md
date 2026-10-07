@@ -59,3 +59,16 @@ With the Project URL, anon key, site address and vault address, Claude can:
 ## Checking the database rules yourself
 
 `supabase/tests/run.sh` runs 34 security checks against a local Postgres 16. Examples: strangers can't read projects, DMs stay between two people, nobody can edit a sent message, and final files stay locked until paid. They also run on GitHub for every change to `supabase/`.
+
+## 4. Email updates
+
+CrewPay emails people on a project when something needs them: an invite, everyone signed, funding and deposits, submitted work, payments, disputes. People can switch it off under Edit profile.
+
+1. **Run the SQL.** Supabase → SQL Editor → paste all of `supabase/migrations/0004_email_notifications.sql` → Run.
+2. **Get an email account to send from.** The quickest is Gmail (up to about 500 emails a day):
+   - Turn on 2-Step Verification for the Google account: https://myaccount.google.com/security
+   - Create an app password: https://myaccount.google.com/apppasswords (name it "CrewPay"). Google shows 16 letters once.
+   - In `.env.local`: `SMTP_USER` = the Gmail address, `SMTP_PASS` = the 16 letters (no spaces), `MAIL_FROM` = `CrewPay <that address>`. Leave `SMTP_HOST=smtp.gmail.com` and `SMTP_PORT=465`.
+   - Any other provider with SMTP works the same way (Brevo, Mailjet, Resend with your own domain): use its host, port, user and password.
+3. **Vercel → Settings → Environment Variables:** add `NOTIFY_SECRET`, `APP_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `MAIL_FROM` with the values from `.env.local`, then redeploy.
+4. **Point the database at the app.** Claude (or anyone with the service key) adds two rows to the `app_config` table: `notify_url` = `<your site>/api/notify` and `notify_secret` = the `NOTIFY_SECRET` value.

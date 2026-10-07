@@ -111,8 +111,9 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
 }
 
 function EditProfile({ profile, onDone }: { profile: Profile; onDone: () => void }) {
-  const { dispatch } = useStore()
+  const { dispatch, mode } = useStore()
   const [name, setName] = useState(profile.name)
+  const [emailUpdates, setEmailUpdates] = useState(profile.emailUpdates ?? true)
   const [bio, setBio] = useState(profile.bio)
   const [skills, setSkills] = useState(profile.skills.join(', '))
   const [portfolio, setPortfolio] = useState(profile.portfolio ?? '')
@@ -136,6 +137,15 @@ function EditProfile({ profile, onDone }: { profile: Profile; onDone: () => void
         <Label hint="Comma separated">Skills</Label>
         <Input id="profile-skills" value={skills} onChange={(e) => setSkills(e.target.value)} />
       </label>
+      {mode === 'live' && (
+        <label className="flex cursor-pointer items-start gap-3 text-sm">
+          <input id="profile-email" type="checkbox" checked={emailUpdates} onChange={(e) => setEmailUpdates(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#ff6a3d]" />
+          <span>
+            <b>Email me about my projects</b>
+            <span className="block text-muted">Invites, signatures, funding, deposits, submitted work and payments.</span>
+          </span>
+        </label>
+      )}
       <div className="flex gap-2">
         <Button
           onClick={() => {
@@ -147,6 +157,7 @@ function EditProfile({ profile, onDone }: { profile: Profile; onDone: () => void
                 bio: bio.trim(),
                 skills: skills.split(',').map((s) => s.trim()).filter(Boolean),
                 portfolio: portfolio.trim() || undefined,
+                emailUpdates,
               },
             })
             onDone()
