@@ -288,11 +288,11 @@ function ActionPanel({ project, role, m, amount }: { project: Project; role: Rol
     const auto = autoApproveAt(m)!
     const deadline = (
       <div className="mb-5 rounded-2xl bg-paper p-4 text-sm">
-        <p className="text-muted">Auto-approves in</p>
+        <p className="text-muted">Released if no reply in</p>
         <p className="font-display text-2xl font-bold">
           <Countdown to={auto} now={now} />
         </p>
-        <p className="mt-1 text-xs text-muted">If {personName(project.lead)} doesn’t respond, the vault pays {personName(role.assignee!)} automatically.</p>
+        <p className="mt-1 text-xs text-muted">If {personName(project.lead)} doesn’t respond in time, the payment is released to {personName(role.assignee!)} anyway.</p>
       </div>
     )
     // Live: the vault doesn't act on its own; once 7 days pass, anyone can release the payment.
@@ -487,7 +487,7 @@ function SubmitForm({
       <Button size="lg" variant="accent" className="w-full" disabled={!meets || note.trim().length < 5} onClick={() => onSubmit(note.trim(), files)}>
         Submit for review
       </Button>
-      <p className="text-center text-xs text-muted">The Lead has {AUTO_APPROVE_DAYS} days to respond, or it pays out automatically.</p>
+      <p className="text-center text-xs text-muted">The Lead has {AUTO_APPROVE_DAYS} days to respond. If they don’t, the payment is released to you anyway.</p>
       {canDispute && (
         <button onClick={() => setDisputing(true)} className="w-full text-center text-sm font-medium text-muted underline underline-offset-4 hover:text-ink">
           Disagree with the change request? Open a dispute

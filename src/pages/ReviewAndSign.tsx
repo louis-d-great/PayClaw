@@ -159,7 +159,7 @@ function YourRole({ project, role, canAct }: { project: Project; role: Role; can
         )}
         <p className="mt-4 text-sm text-muted">
           Then {role.milestones.length} milestone payment{role.milestones.length === 1 ? '' : 's'}, each released when approved, or
-          automatically after 7 days of silence.
+          after 7 days if the Lead doesn’t respond.
         </p>
       </div>
 

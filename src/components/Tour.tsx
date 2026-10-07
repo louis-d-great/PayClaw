@@ -67,7 +67,7 @@ export default function Tour() {
             {[
               ['Agree first', 'Each role gets a fixed price, a deposit and milestones. Nothing binds until everyone signs.'],
               ['Money locked in', 'The Lead funds a vault. Deposits go out the moment it’s funded.'],
-              ['Paid per milestone', 'Approved work is paid instantly. Seven days of silence pays automatically.'],
+              ['Paid per milestone', 'Approved work is paid instantly. If the Lead stays silent for 7 days, the payment is released anyway.'],
             ].map(([t, d], i) => (
               <li key={t} className="flex gap-3">
                 <span className={cx('mt-0.5 h-5 w-5 shrink-0 rounded-full', i === 0 ? 'bg-accent' : i === 1 ? 'bg-ink' : 'bg-ok')} />
