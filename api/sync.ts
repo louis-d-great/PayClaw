@@ -157,7 +157,7 @@ export async function syncTx(
         await setMilestone(log.args.role, log.args.milestone, 'submitted')
         const round = (count ?? 0) + 1
         messages.push(
-          `${name(role?.assignee_id)} submitted “${m?.title}”${round > 1 ? ` (round ${round})` : ''}. ${name(project.lead_id)} has 7 days to review, then it pays automatically.`,
+          `${name(role?.assignee_id)} submitted “${m?.title}”${round > 1 ? ` (round ${round})` : ''}. ${name(project.lead_id)} has 7 days to review; after that the payment can be released anyway.`,
         )
         break
       }
