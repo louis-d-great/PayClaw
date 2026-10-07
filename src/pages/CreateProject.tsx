@@ -9,7 +9,7 @@ import type { Project } from '../types'
 import { PageHint } from '../components/Tour'
 
 type DraftMilestone = { id: string; title: string; doneWhen: string; due: string; pct: number; revisions: number }
-type DraftRole = { id: string; title: string; assignee: string; pay: string; depositPct: number; milestones: DraftMilestone[] }
+type DraftRole = { id: string; title: string; assignee: string; pay: string; depositPct: number; listed: boolean; milestones: DraftMilestone[] }
 
 const SEGMENT_COLORS = ['#ff6a3d', '#1d1b16', '#3d7bff', '#1f8a5b', '#a855f7', '#e0a100']
 
@@ -28,6 +28,7 @@ const newRole = (): DraftRole => ({
   assignee: '',
   pay: '',
   depositPct: DEFAULT_DEPOSIT,
+  listed: true,
   milestones: [newMilestone(100 - DEFAULT_DEPOSIT)],
 })
 
@@ -53,6 +54,7 @@ const fromProject = (p: Project): DraftRole[] =>
     assignee: r.assignee ?? '',
     pay: String(r.pay),
     depositPct: r.depositPct,
+    listed: r.listed ?? false,
     milestones: r.milestones.map((m) => ({
       id: m.id,
       title: m.title,
@@ -103,6 +105,7 @@ export default function CreateProject({ editing }: { editing?: Project }) {
       assignee: toHandle(r.assignee),
       pay: payOf(r),
       depositPct: r.depositPct,
+      listed: !toHandle(r.assignee) && r.listed,
       response: 'pending',
       milestones: r.milestones.map((m) => ({
         id: m.id,
@@ -343,6 +346,15 @@ function RoleEditor({
           </div>
         </label>
       </div>
+      {!r.assignee.trim() && (
+        <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-2xl bg-ink/[.03] px-4 py-3 text-sm">
+          <input id={`listed-${r.id}`} type="checkbox" checked={r.listed} onChange={(e) => update({ listed: e.target.checked })} className="mt-0.5 h-4 w-4 accent-[#ff6a3d]" />
+          <span>
+            <b>List on the public Open roles board</b>
+            <span className="block text-muted">Anyone on CrewPay can find this role and apply with their portfolio and price. You pick who joins.</span>
+          </span>
+        </label>
+      )}
 
       {/* Deposit */}
       <div className="mt-5 rounded-2xl border border-accent/30 bg-card p-4">

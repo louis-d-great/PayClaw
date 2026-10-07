@@ -4,6 +4,8 @@ import { LIVE_ACTIONS, People, fetchInvite, fetchProfiles, fetchProjects, perfor
 import { supabase } from './lib/supabase'
 import { BUSY_TEXT, CHAIN_ACTIONS, performChain } from './liveWork'
 import { Onboarding, SignIn, Splash } from './pages/Auth'
+import { PublicOpenRoles } from './pages/OpenRoles'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { uid } from './lib/format'
 import {
   AUTO_APPROVE_DAYS,
@@ -947,6 +949,8 @@ function DemoProvider({ children, setMode }: { children: ReactNode; setMode: (m:
 }
 
 function LiveProvider({ children, setMode }: { children: ReactNode; setMode: (m: Mode) => void }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   useEffect(() => {
     const sb = supabase!
@@ -955,6 +959,8 @@ function LiveProvider({ children, setMode }: { children: ReactNode; setMode: (m:
     return () => data.subscription.unsubscribe()
   }, [])
   if (session === undefined) return <Splash />
+  // The Open roles board is public: visitors can browse it before signing in.
+  if (!session && location.pathname === '/jobs') return <PublicOpenRoles onSignIn={() => navigate('/')} />
   if (!session) return <SignIn onDemo={() => setMode('demo')} />
   return (
     <LiveSession key={session.user.id} userId={session.user.id} setMode={setMode}>
@@ -1142,6 +1148,11 @@ function LiveSession({ userId, children, setMode }: { userId: string; children: 
     refresh,
   }
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
+}
+
+/** The store when inside the app, or null on public pages shown before sign-in. */
+export function useStoreMaybe() {
+  return useContext(StoreCtx)
 }
 
 export function useStore() {

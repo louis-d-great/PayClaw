@@ -84,6 +84,23 @@ select pg_temp.check(jsonb_array_length(invite('20000000-0000-0000-0000-00000000
 select pg_temp.check(invite('20000000-0000-0000-0000-000000000001')->'roles'->0->'milestones'->0->>'id' = '40000000-0000-0000-0000-000000000001',
   'invite carries milestone ids');
 
+-- ---------------------------------------------------------------- the open roles board
+
+select pg_temp.check(jsonb_array_length(open_roles()) = 0, 'an unlisted open role stays off the board');
+select pg_temp.act_as('10000000-0000-0000-0000-00000000000b');
+update roles set listed = true where id = '30000000-0000-0000-0000-000000000002';
+select pg_temp.act_as('10000000-0000-0000-0000-00000000000a');
+select pg_temp.check(jsonb_array_length(open_roles()) = 0, 'crew cannot list a role');
+update roles set listed = true where id = '30000000-0000-0000-0000-000000000002';
+set role anon;
+select pg_temp.act_as('');
+select pg_temp.check(jsonb_array_length(open_roles()) = 1, 'signed-out visitors see a listed open role');
+select pg_temp.check(open_roles()->0->>'title' = 'Mix engineer' and open_roles()->0->'lead'->>'handle' = 'louis2', 'the board shows the role and its Lead');
+select pg_temp.check(open_roles()->0->'milestones'->0->>'done_when' = 'Five WAVs', 'the board shows what done means');
+select pg_temp.check(not (open_roles()->0 ? 'email') and (open_roles()->0->'lead') - 'handle' - 'name' = '{}'::jsonb, 'the board shares no private details');
+set role authenticated;
+select pg_temp.act_as('10000000-0000-0000-0000-00000000000d');
+
 -- ---------------------------------------------------------------- counter-offers
 
 select pg_temp.act_as('10000000-0000-0000-0000-00000000000c');
@@ -133,6 +150,7 @@ select pg_temp.check((select signed_version from roles where id = '30000000-0000
 
 select pg_temp.act_as('10000000-0000-0000-0000-00000000000d');
 select pg_temp.check((select count(*) from projects) = 1, 'picked applicant can now read the project');
+select pg_temp.check(jsonb_array_length(open_roles()) = 0, 'a filled role leaves the board');
 
 -- ---------------------------------------------------------------- editing the draft
 

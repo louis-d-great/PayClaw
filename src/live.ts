@@ -90,6 +90,7 @@ type RoleRow = {
   response: Role['response']
   signed_version: number | null
   payout: PayoutPreference | null
+  listed?: boolean | null
   milestones?: MilestoneRow[]
   applications?: ApplicationRow[]
 }
@@ -272,6 +273,7 @@ function toProject(row: ProjectRow, people: People, urls: Map<string, string>): 
       pay: Number(r.pay),
       depositPct: r.deposit_pct,
       response: r.response,
+      listed: !!r.listed,
       signedVersion: opt(r.signed_version),
       payout: opt(r.payout),
       applicants: byTime(r.applications).map((a) => ({
@@ -441,6 +443,7 @@ const draftJson = (d: Pick<Project, 'name' | 'brief' | 'deadline' | 'roles'>) =>
     id: r.id,
     title: r.title,
     assignee: r.assignee ?? '',
+    listed: !r.assignee && !!r.listed,
     pay: r.pay,
     depositPct: r.depositPct,
     milestones: r.milestones.map((m) => ({ id: m.id, title: m.title, doneWhen: m.doneWhen, pct: m.pct, due: m.due ?? '', revisions: m.revisions })),

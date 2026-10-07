@@ -92,6 +92,11 @@ export default function Tour() {
       body: 'Write a short brief, add each role with a fixed price and an upfront deposit, and split the rest into milestones that say what “done” means. Invite people by their @handle, or leave a role open for anyone with the link.',
     },
     {
+      target: ['[data-tour=jobs]', '[data-tour=jobs-card]'],
+      title: 'Find paid work',
+      body: 'Open roles lists paid roles on real CrewPay projects: the pay, the upfront deposit and what each milestone needs. Apply with your portfolio and your price; if the Lead picks you, you sign the same terms.',
+    },
+    {
       target: ['[data-tour=stats]'],
       title: 'What needs you',
       body: 'What you’ve been paid so far, invites waiting for your signature, and counter-offers or work waiting for your review.',

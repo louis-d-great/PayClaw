@@ -36,6 +36,9 @@ export default function Layout() {
             <NavLink to="/" end className={navClass}>
               Dashboard
             </NavLink>
+            <NavLink to="/jobs" className={navClass} data-tour="jobs">
+              Open roles
+            </NavLink>
             <NavLink to="/new" className={navClass} data-tour="new">
               New project
             </NavLink>
