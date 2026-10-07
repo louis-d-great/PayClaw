@@ -83,6 +83,7 @@ export type Applicant = {
 export type RoleResponse = 'pending' | 'accepted' | 'countered' | 'declined'
 
 export type Role = {
+  listed?: boolean // open role shown on the public Open roles board
   id: string
   title: string // free text, e.g. "Mix engineer"
   assignee?: Handle // empty = open role, anyone with the link can respond

@@ -72,3 +72,10 @@ CrewPay emails people on a project when something needs them: an invite, everyon
    - Any other provider with SMTP works the same way (Brevo, Mailjet, Resend with your own domain): use its host, port, user and password.
 3. **Vercel → Settings → Environment Variables:** add `NOTIFY_SECRET`, `APP_URL`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` and `MAIL_FROM` with the values from `.env.local`, then redeploy.
 4. **Point the database at the app.** Claude (or anyone with the service key) adds two rows to the `app_config` table: `notify_url` = `<your site>/api/notify` and `notify_secret` = the `NOTIFY_SECRET` value.
+
+## 5. Open roles board
+
+`/jobs` lists open roles that their Lead chose to show publicly. Anyone can browse it without signing in.
+
+1. Supabase → SQL Editor → paste all of `supabase/migrations/0005_open_roles.sql` → Run.
+2. That's it. When a Lead leaves a role's "Who" blank, "List on the public Open roles board" is ticked by default.

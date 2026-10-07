@@ -47,6 +47,16 @@ export default function Dashboard() {
         </Link>
       )}
 
+      <Link to="/jobs" data-tour="jobs-card" className="mb-8 flex flex-wrap items-center gap-3 rounded-3xl border border-line bg-card px-6 py-4 transition hover:border-ink/30">
+        <span className="relative inline-block h-5 w-8 shrink-0" aria-hidden="true">
+          <span className="absolute left-0 top-0 h-5 w-5 rounded-full bg-accent" />
+          <span className="absolute right-0 top-0 h-5 w-5 rounded-full bg-ink" />
+        </span>
+        <span className="font-medium">Looking for work?</span>
+        <span className="text-sm text-muted">Browse open roles with the pay locked in before you start.</span>
+        <span className="ml-auto text-sm font-medium">Open roles →</span>
+      </Link>
+
       <div className="mb-8 grid gap-4 sm:grid-cols-3" data-tour="stats">
         <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />
         <Stat

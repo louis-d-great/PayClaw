@@ -27,7 +27,7 @@ export function nextStep(p: Project, who: string, app: string): { line: string; 
   if (draft && isLead && p.roles.length > 0 && p.roles.every((r) => r.signed_version === p.version))
     return { line: 'Everyone has signed. Fund the project so the deposits go out and work can start.', label: 'Fund the project', url: `${app}/p/${p.id}` }
   if (p.status === 'funded' && isLead && p.roles.some((r) => r.milestones.some((m) => m.status === 'submitted')))
-    return { line: 'Work is waiting for your review. Approve it, ask for changes, or say nothing and it pays automatically after 7 days.', label: 'Review the work', url: `${app}/p/${p.id}` }
+    return { line: 'Work is waiting for your review. Approve it or ask for changes. If you don’t reply within 7 days, the payment can be released anyway.', label: 'Review the work', url: `${app}/p/${p.id}` }
   if (p.status === 'funded' && mine && mine.milestones.some((m) => m.status === 'working'))
     return { line: 'When your next milestone is ready, submit it from the project page.', label: 'Open the project', url: `${app}/p/${p.id}` }
   return open

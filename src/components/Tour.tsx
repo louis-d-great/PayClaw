@@ -67,7 +67,7 @@ export default function Tour() {
             {[
               ['Agree first', 'Each role gets a fixed price, a deposit and milestones. Nothing binds until everyone signs.'],
               ['Money locked in', 'The Lead funds a vault. Deposits go out the moment it’s funded.'],
-              ['Paid per milestone', 'Approved work is paid instantly. Seven days of silence pays automatically.'],
+              ['Paid per milestone', 'Approved work is paid instantly. If the Lead stays silent for 7 days, the payment is released anyway.'],
             ].map(([t, d], i) => (
               <li key={t} className="flex gap-3">
                 <span className={cx('mt-0.5 h-5 w-5 shrink-0 rounded-full', i === 0 ? 'bg-accent' : i === 1 ? 'bg-ink' : 'bg-ok')} />
@@ -90,6 +90,11 @@ export default function Tour() {
       target: ['[data-tour=new]', '[data-tour=new-mobile]'],
       title: 'Start a project',
       body: 'Write a short brief, add each role with a fixed price and an upfront deposit, and split the rest into milestones that say what “done” means. Invite people by their @handle, or leave a role open for anyone with the link.',
+    },
+    {
+      target: ['[data-tour=jobs]', '[data-tour=jobs-card]'],
+      title: 'Find paid work',
+      body: 'Open roles lists paid roles on real CrewPay projects: the pay, the upfront deposit and what each milestone needs. Apply with your portfolio and your price; if the Lead picks you, you sign the same terms.',
     },
     {
       target: ['[data-tour=stats]'],

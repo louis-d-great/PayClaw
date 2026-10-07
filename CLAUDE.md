@@ -28,6 +28,7 @@ Groups who work and get paid together (music collabs, design duos, freelance tea
 - Wallets are passkeys (Tempo Accounts SDK, `webAuthn` adapter); public keys backed up in the `passkeys` table. CrewPay pays every fee via `/api/relay`.
 - First-run tour (`src/components/Tour.tsx`): welcome + dashboard spotlight once per person (localStorage), one-time PageHint cards on create/project/invite/milestone, replay from the profile.
 - Before mainnet: the fee sponsor (`api/relay.ts`) only checks which contract is called; limit it to signed-in CrewPay users with a per-person cap so it can't be drained.
+- Open roles board (`/jobs`, `src/pages/OpenRoles.tsx`, `open_roles()` in 0005): public, no sign-in; Leads opt in per open role (`roles.listed`). The product vision is "the place crews form": a talent marketplace for crews with pay built in. Revenue is a small platform fee on funded projects and ramp fees, never gas (CrewPay pays gas).
 - Next: the user records the pitch and demo videos (`docs/VIDEOS.md`) and submits on Colosseum. Later: on/off-ramp partner, multisig reviewer/owner keys, vault audit, mainnet.
 
 ## Working here
