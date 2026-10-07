@@ -6,6 +6,7 @@ import { uid } from '../lib/format'
 import { DEFAULT_DEPOSIT, DEFAULT_REVISIONS, schedule } from '../lib/rules'
 import { personName, useStore } from '../store'
 import type { Project } from '../types'
+import { PageHint } from '../components/Tour'
 
 type DraftMilestone = { id: string; title: string; doneWhen: string; due: string; pct: number; revisions: number }
 type DraftRole = { id: string; title: string; assignee: string; pay: string; depositPct: number; milestones: DraftMilestone[] }
@@ -154,6 +155,12 @@ export default function CreateProject({ editing }: { editing?: Project }) {
 
   return (
     <div className="animate-rise">
+      {!editing && (
+        <PageHint id="create" title="Posting a deal">
+          Give each role a fixed price, an upfront deposit and milestones. Deposit plus milestones must add up to 100%, and each milestone
+          says what “done” means. Nothing is binding until everyone signs; any change later means everyone signs again.
+        </PageHint>
+      )}
       <div className="mb-8 max-w-2xl">
         <p className="mb-2 text-sm font-medium text-accent">{editing ? `Editing draft v${editing.version}` : 'New project'}</p>
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">{editing ? 'Update the deal.' : 'Build your crew.'}</h1>

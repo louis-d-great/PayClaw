@@ -20,6 +20,7 @@ import { milestoneStatus } from '../lib/status'
 import { personName, useStore } from '../store'
 import { mediaKind, readFile, sizeLabel } from '../lib/files'
 import { REVIEWER, type FileRef, type Milestone, type Project, type Role, type Submission } from '../types'
+import { PageHint } from '../components/Tour'
 
 export default function MilestonePage() {
   const { projectId, roleId, milestoneId } = useParams()
@@ -43,6 +44,10 @@ export default function MilestonePage() {
 
   return (
     <div className="animate-rise">
+      <PageHint id="milestone" title="How a milestone gets paid">
+        The collaborator submits work here: previews are open, final files unlock once it’s paid. The Lead approves (paid instantly),
+        asks for changes within the agreed rounds, or says nothing, and after 7 days the payment can be released anyway.
+      </PageHint>
       <Link to={`/p/${project.id}`} className="mb-6 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
         ← {project.name}
       </Link>

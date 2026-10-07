@@ -153,6 +153,7 @@ export type Profile = {
   skills: string[]
   portfolio?: string
   wallet?: string // live: their CrewPay wallet (a passkey account) on Tempo
+  emailUpdates?: boolean // live: email me about my projects (default on)
 }
 
 export type Project = {

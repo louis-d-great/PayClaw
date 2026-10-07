@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import Tour from './Tour'
 import { PEOPLE, personName, useStore } from '../store'
 import { Avatar, cx } from './ui'
 
@@ -35,20 +36,20 @@ export default function Layout() {
             <NavLink to="/" end className={navClass}>
               Dashboard
             </NavLink>
-            <NavLink to="/new" className={navClass}>
+            <NavLink to="/new" className={navClass} data-tour="new">
               New project
             </NavLink>
-            <NavLink to={`/u/${me.replace(/^@/, '')}`} className={navClass}>
+            <NavLink to={`/u/${me.replace(/^@/, '')}`} className={navClass} data-tour="profile">
               Profile
             </NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <Link to="/new" className="grid h-9 w-9 place-items-center rounded-full bg-ink text-lg text-paper sm:hidden" aria-label="New project">
+            <Link to="/new" className="grid h-9 w-9 place-items-center rounded-full bg-ink text-lg text-paper sm:hidden" aria-label="New project" data-tour="new-mobile">
               +
             </Link>
             {mode === 'live' ? (
               <>
-                <Link to={`/u/${me.replace(/^@/, '')}`} className="flex items-center gap-2 rounded-full border border-line bg-card py-1 pl-1 pr-3 text-sm">
+                <Link to={`/u/${me.replace(/^@/, '')}`} className="flex items-center gap-2 rounded-full border border-line bg-card py-1 pl-1 pr-3 text-sm" data-tour="profile-chip">
                   <Avatar handle={me} size={26} />
                   <span className="max-w-32 truncate font-medium">{personName(me)}</span>
                 </Link>
@@ -80,6 +81,7 @@ export default function Layout() {
       <main className="mx-auto max-w-6xl px-4 pb-28 pt-8 sm:px-6">
         <Outlet />
       </main>
+      <Tour />
       {busy && (
         <div
           role="status"

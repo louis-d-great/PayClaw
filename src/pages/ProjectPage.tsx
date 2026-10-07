@@ -10,6 +10,7 @@ import { canReclaim, earnedBy, vault } from '../lib/rules'
 import { milestoneStatus, projectStatus, roleStatus } from '../lib/status'
 import { budget, parties, personName, signedCount, useStore } from '../store'
 import { REVIEWER, type Project, type Role } from '../types'
+import { PageHint } from '../components/Tour'
 
 export default function ProjectPage() {
   const { projectId } = useParams()
@@ -34,6 +35,10 @@ export default function ProjectPage() {
 
   return (
     <div className="animate-rise">
+      <PageHint id="project" title="Inside a project">
+        On the left: who has signed, the vault, and each person’s milestones (open one to submit or review work). On the right: the
+        group chat, which is the official record if there’s ever a dispute. Private DMs are never used as evidence.
+      </PageHint>
       {params.get('invites') && isLead && (
         <div className="mb-6 flex items-center gap-3 rounded-2xl bg-ok-soft px-5 py-4 text-sm text-ok">
           <span className="grid h-6 w-6 place-items-center rounded-full bg-ok text-white">✓</span>

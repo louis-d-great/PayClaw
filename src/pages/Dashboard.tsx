@@ -35,7 +35,9 @@ export default function Dashboard() {
         <h1 className="font-display text-4xl font-bold tracking-tight sm:text-5xl">Your projects</h1>
       </div>
 
-      <WalletCard />
+      <div data-tour="wallet">
+        <WalletCard />
+      </div>
 
       {isReviewer && (
         <Link to="/review" className="mb-8 flex items-center gap-3 rounded-3xl border border-warn/30 bg-warn-soft/50 p-5 hover:bg-warn-soft">
@@ -45,7 +47,7 @@ export default function Dashboard() {
         </Link>
       )}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid gap-4 sm:grid-cols-3" data-tour="stats">
         <Stat label="Paid to you so far" value={<Money value={Math.round(earned * 100) / 100} className="text-3xl font-bold" />} />
         <Stat
           label="Invites waiting on you"
@@ -76,7 +78,7 @@ export default function Dashboard() {
       )}
 
       <div className="mb-5 flex items-center gap-3">
-        <div className="inline-flex rounded-full border border-line bg-card p-1">
+        <div className="inline-flex rounded-full border border-line bg-card p-1" data-tour="tabs">
           {(
             [
               ['lead', `Projects I lead · ${leading.length}`],

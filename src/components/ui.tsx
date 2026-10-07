@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
+import type { ComponentProps, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { Link } from 'react-router-dom'
 import { personName } from '../store'
 
@@ -18,7 +18,7 @@ export function Button({
   size = 'md',
   className,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: 'sm' | 'md' | 'lg' }) {
+}: ComponentProps<'button'> & { variant?: ButtonVariant; size?: 'sm' | 'md' | 'lg' }) {
   return (
     <button
       {...props}
