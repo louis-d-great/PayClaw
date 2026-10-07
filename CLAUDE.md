@@ -26,6 +26,8 @@ Groups who work and get paid together (music collabs, design duos, freelance tea
 - **Hackathon:** Colosseum Crypto World's Fair, **Tempo track**, submissions due **2026-10-12**. Code started 2026-09-28 (inside the judged window; disclose it).
 - **Chain: Tempo** (Stripe/Paradigm payments L1, no native coin, fees in stablecoins). Vault live on Tempo testnet at `0xCEb2e939DE06360eB2fE68e07A2589059d9CAc2A`, holding pathUSD, payouts tagged with `transferWithMemo(projectId)`. Collaborators agree with `agree(termsDigest)` so passkey accounts work. Test-only keys live in `contracts/.env` (git-ignored).
 - Wallets are passkeys (Tempo Accounts SDK, `webAuthn` adapter); public keys backed up in the `passkeys` table. CrewPay pays every fee via `/api/relay`.
+- First-run tour (`src/components/Tour.tsx`): welcome + dashboard spotlight once per person (localStorage), one-time PageHint cards on create/project/invite/milestone, replay from the profile.
+- Before mainnet: the fee sponsor (`api/relay.ts`) only checks which contract is called; limit it to signed-in CrewPay users with a per-person cap so it can't be drained.
 - Next: the user records the pitch and demo videos (`docs/VIDEOS.md`) and submits on Colosseum. Later: on/off-ramp partner, multisig reviewer/owner keys, vault audit, mainnet.
 
 ## Working here

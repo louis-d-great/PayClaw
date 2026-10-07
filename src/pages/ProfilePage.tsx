@@ -6,6 +6,7 @@ import { history, reputation } from '../lib/reputation'
 import { projectStatus } from '../lib/status'
 import { personName, useStore } from '../store'
 import type { Profile } from '../types'
+import { useReplayTour } from '../components/Tour'
 
 export default function ProfilePage() {
   const { handle: raw } = useParams()
@@ -15,6 +16,7 @@ export default function ProfilePage() {
   const rep = reputation(projects, handle)
   const work = history(projects, handle)
   const [editing, setEditing] = useState(false)
+  const replayTour = useReplayTour()
 
   return (
     <div className="animate-rise mx-auto max-w-4xl">
@@ -36,9 +38,14 @@ export default function ProfilePage() {
           </div>
         </div>
         {me === handle && !editing && (
-          <Button variant="outline" onClick={() => setEditing(true)}>
-            Edit profile
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setEditing(true)}>
+              Edit profile
+            </Button>
+            <Button variant="ghost" onClick={replayTour}>
+              Take the tour again
+            </Button>
+          </div>
         )}
       </div>
 

@@ -10,6 +10,7 @@ import { CreateWalletButton, friendlyError } from '../components/Wallet'
 import { agree, shortAddress, termsBlocker, termsFor, txUrl, walletsEnabled } from '../lib/tempo'
 import { isSigned, personName, useStore } from '../store'
 import type { PayoutPreference, Project, Role } from '../types'
+import { PageHint } from '../components/Tour'
 
 type Panel = 'none' | 'sign' | 'counter' | 'decline'
 
@@ -47,6 +48,10 @@ export default function ReviewAndSign() {
 
   return (
     <div className="animate-rise mx-auto max-w-5xl">
+      <PageHint id="invite" title="You’ve been invited">
+        Check your pay, your upfront deposit and what each milestone needs. Then accept and sign with your passkey, counter-offer on
+        the price or deposit, or decline. Your deposit arrives the moment the Lead funds the vault.
+      </PageHint>
       <div className="mb-8 flex items-center gap-3">
         <Avatar handle={project.lead} size={40} />
         <p className="text-muted">
